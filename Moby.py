@@ -497,7 +497,7 @@ with st.sidebar:
             h = c3.number_input("H", 50, 400, value=def_h, key=f"h_{i}")
             r = c4.number_input("Rip", 1, 20, value=def_r, key=f"r_{i}")
             
-            is_manual = st.checkbox("Libera", value=def_man, key=f"man_{i}")
+            is_manual = st.checkbox("Alt. Mensole", value=def_man, key=f"man_{i}")
             mh = []
             z_shelves = []
             if is_manual:
@@ -662,3 +662,4 @@ with tab2:
             c_name.write(f"**{part['lbl']}** ({part['h']}x{part['w']} cm)")
             dxf_single = generate_single_dxf(part, prj)
             c_down.download_button("⬇️ DXF", dxf_single, f"{part['lbl']}.dxf", "application/dxf", key=f"dxf_{idx}")
+
