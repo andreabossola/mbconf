@@ -11,7 +11,7 @@ from datetime import datetime
 from fpdf import FPDF
 
 # --- 1. SETUP & LOGIN ---
-st.set_page_config(layout="wide", page_title="Moby v22 Camera Fix")
+st.set_page_config(layout="wide", page_title="Moby v22.1 Final")
 
 def check_login():
     if "logged_in" not in st.session_state:
@@ -45,7 +45,7 @@ OFFSET_LATERALI = 3.0
 PESO_SPECIFICO_FERRO = 7.85 
 PESO_SPECIFICO_LEGNO = 0.70 
 
-VERSION = "v22 Camera Fix"
+VERSION = "v22.1 Camera Fix"
 COPYRIGHT = "© Andrea Bossola 2025"
 stl_triangles = [] 
 
@@ -53,7 +53,7 @@ stl_triangles = []
 def get_timestamp_string(): return datetime.now().strftime("%Y%m%d_%H%M")
 def clean_filename(name): return "".join([c if c.isalnum() else "_" for c in name])
 
-# --- 3. PDF GENERATOR ENGINE ---
+# --- 3. PDF ENGINE ---
 class PDFReport(FPDF):
     def __init__(self, project_name):
         super().__init__()
@@ -323,6 +323,7 @@ def generate_pdf_report(project_name, parts_list, wood_data, iron_data, stats, c
         pdf.cell(w_side, 5, "VISTA LATERALE", 0, 0, 'C')
         pdf.draw_dimension_line_horz(x_side, x_side + w_side, base_y + 5, f"P: {col['d']:.0f}")
 
+    # --- PAGINE ESECUTIVI TAGLIO ---
     pdf.add_page()
     pdf.set_fill_color(240, 240, 240)
     pdf.set_font("Arial", 'B', 11)
@@ -487,7 +488,7 @@ with st.sidebar:
             d = c2.number_input("P", 20, 100, value=def_d, key=f"d_{i}")
             c3, c4 = st.columns(2)
             h = c3.number_input("H", 50, 400, value=def_h, key=f"h_{i}")
-            r = c4.number_input("Rip", 1, 20, value=def_r, key=f"r_{i}")
+            r = c4.number_input("Alt. Mensole", 1, 20, value=def_r, key=f"r_{i}") # FIX NOME
             
             is_manual = st.checkbox("Libera", value=def_man, key=f"man_{i}")
             mh = []
@@ -524,8 +525,8 @@ with st.sidebar:
 
     # --- 3D PLOT ---
     fig = go.Figure()
-    # CAMARA POSITION FIX
-    camera = dict(eye=dict(x=0.5, y=-2.0, z=0.5)) 
+    # FIX CAMERA: X=0 (centrata), Y=-2.5 (frontale distante), Z=0.8 (altezza occhi)
+    camera = dict(eye=dict(x=0.0, y=-2.5, z=0.8)) 
     
     cx = 0 
     for dc in dati_colonne:
@@ -562,14 +563,13 @@ with st.sidebar:
 tab1, tab2 = st.tabs(["🎥 3D Config", "🏭 ESECUTIVI PRODUZIONE"])
 
 with tab1:
-    # FIX: CAMARA + UIREVISION
     fig.update_layout(
         scene=dict(
             xaxis=dict(visible=False), yaxis=dict(visible=False), zaxis=dict(title="H"), 
             aspectmode='data', bgcolor="white"
         ), 
-        scene_camera=camera, # <--- CAMERA FISSA QUI
-        uirevision='constant', # <--- EVITA RESET
+        scene_camera=camera, 
+        uirevision='constant',
         margin=dict(t=0,b=0,l=0,r=0), height=600
     )
     st.plotly_chart(fig, width="stretch")
