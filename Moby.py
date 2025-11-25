@@ -8,7 +8,7 @@ import ezdxf
 from datetime import datetime
 
 # --- 1. SETUP & LOGIN ---
-st.set_page_config(layout="wide", page_title="Moby v0.9 (Reorder)")
+st.set_page_config(layout="wide", page_title="Moby v0.9 (Reorder Fix)")
 
 def check_login():
     if "logged_in" not in st.session_state:
@@ -39,7 +39,7 @@ SPESSORE_LEGNO = 4.0
 SPESSORE_FERRO = 0.3  
 DIAMETRO_FORO = 0.6 
 OFFSET_LATERALI = 3.0 
-VERSION = "v0.9 Reorder"
+VERSION = "v0.9.1 Reorder Fix"
 COPYRIGHT = "© Andrea Bossola 2025"
 stl_triangles = [] 
 
@@ -48,44 +48,45 @@ def get_timestamp_string(): return datetime.now().strftime("%Y%m%d_%H%M")
 def clean_filename(name): return "".join([c if c.isalnum() else "_" for c in name])
 
 # --- GESTIONE STATO ORDINE MODULI ---
-# Questa funzione assicura che esista una lista di "ID Moduli" (0, 1, 2...)
-# che possiamo mescolare a piacimento.
 def init_module_order(n):
     if 'module_order' not in st.session_state:
         st.session_state.module_order = list(range(n))
     
-    # Se l'utente ha cambiato il numero di colonne, aggiorniamo la lista
     current_len = len(st.session_state.module_order)
     if n > current_len:
-        # Aggiungi nuovi ID
         for i in range(current_len, n):
             st.session_state.module_order.append(i)
     elif n < current_len:
-        # Taglia gli ultimi (ma mantieni l'ordine dei rimanenti)
-        # Nota: questo taglia "visivamente" gli ultimi, ma è complesso.
-        # Per semplicità, se riduciamo, resettiamo l'ordine agli N richiesti o tagliamo la coda.
         st.session_state.module_order = st.session_state.module_order[:n]
 
-# Funzione per scambiare due moduli
 def swap_modules(idx1, idx2):
     order = st.session_state.module_order
     order[idx1], order[idx2] = order[idx2], order[idx1]
     st.session_state.module_order = order
-    # st.rerun() viene chiamato dal bottone automaticamente
 
-# --- 3. NESTING ENGINE ---
+# --- 3. NESTING ENGINE (CORRETTO) ---
 class Sheet:
     def __init__(self, w, h, id):
         self.w, self.h, self.id = w, h, id
-        self.items, self.cursor_x, self.cursor_y, self.row_h = [], 0, 0, 0
+        self.items = []
+        self.cursor_x = 0
+        self.cursor_y = 0
+        self.row_h = 0
+        self.used_area = 0 # <--- FIX: REINSERITA VARIABILE MANCANTE
+
     def add(self, item):
         margin = 1.0 
         iw, ih = item['w'] + margin, item['h'] + margin
         if self.cursor_x + iw > self.w:
             self.cursor_x, self.cursor_y, self.row_h = 0, self.cursor_y + self.row_h, 0
         if self.cursor_y + ih > self.h: return False
+        
         item['x_pos'], item['y_pos'] = self.cursor_x, self.cursor_y
         self.items.append(item)
+        
+        # Calcolo area usata per statistiche
+        self.used_area += item['w'] * item['h'] # <--- FIX: CALCOLO AREA
+        
         self.cursor_x += iw
         self.row_h = max(self.row_h, ih)
         return True
@@ -134,12 +135,9 @@ def load_config(f):
         data = json.load(f)
         st.session_state['project_name'] = data.get('project_name', 'Progetto')
         st.session_state['num_colonne'] = data.get('num_colonne', 1)
-        # Reset ordine quando carico un file
         st.session_state.module_order = list(range(st.session_state['num_colonne']))
         
         for i, col in enumerate(data.get('cols', [])):
-            # Qui carichiamo i dati negli ID originali (0, 1, 2...)
-            # Se il JSON è vecchio, assume ordine sequenziale
             st.session_state[f"w_{i}"] = col.get('w', 60)
             st.session_state[f"h_{i}"] = col.get('h', 200)
             st.session_state[f"d_{i}"] = col.get('d', 30)
@@ -156,7 +154,6 @@ with st.sidebar:
     try: st.image("logo.png", width=200) 
     except: st.markdown("## MOBY")
     
-    # --- INPUT NOME PROGETTO ---
     if 'project_name' not in st.session_state: st.session_state['project_name'] = "Progetto"
     proj_name_input = st.text_input("Nome Progetto", value=st.session_state['project_name'])
     st.session_state['project_name'] = clean_filename(proj_name_input)
@@ -169,39 +166,25 @@ with st.sidebar:
     st.header("📐 Moduli")
     num_colonne = st.number_input("Quantità Moduli", 1, 10, 2, key="num_colonne")
     
-    # Inizializza o aggiorna l'ordine dei moduli
     init_module_order(num_colonne)
     
-    dati_colonne_ordinate = [] # Lista finale ordinata per il disegno
+    dati_colonne_ordinate = []
     lista_pezzi_ferro = [] 
 
-    # ITERIAMO SULL'ORDINE VISUALE (Posizione 1, 2, 3...)
-    # ma peschiamo i dati dagli ID FISSI (A, B, C...)
-    
     for pos_index, module_id in enumerate(st.session_state.module_order):
-        # module_id è l'identità fissa (0=A, 1=B, 2=C...)
-        module_letter = chr(65 + module_id) # 0->A, 1->B...
-        
-        # TITOLO CON CONTROLLI SPOSTAMENTO
-        # Usiamo le colonne per mettere frecce accanto al titolo
-        exp_col1, exp_col2, exp_col3 = st.columns([6, 1, 1])
+        module_letter = chr(65 + module_id)
         
         with st.expander(f"POSIZIONE {pos_index+1} (Modulo {module_letter})", expanded=False):
-            # Pulsanti Spostamento
             c_move1, c_move2 = st.columns(2)
-            # Tasto SU (Disabilitato se è il primo)
             if pos_index > 0:
                 if c_move1.button(f"⬅️ Sposta a SX", key=f"up_{module_id}"):
                     swap_modules(pos_index, pos_index - 1)
                     st.rerun()
-            
-            # Tasto GIU (Disabilitato se è l'ultimo)
             if pos_index < num_colonne - 1:
                 if c_move2.button(f"➡️ Sposta a DX", key=f"down_{module_id}"):
                     swap_modules(pos_index, pos_index + 1)
                     st.rerun()
 
-            # Input Dati (Legati all'ID univoco, non alla posizione!)
             c1, c2 = st.columns(2)
             w = c1.number_input("Largh.", 30, 200, 60, key=f"w_{module_id}")
             d = c2.number_input("Prof.", 20, 100, 30, key=f"d_{module_id}")
@@ -218,7 +201,6 @@ with st.sidebar:
                 for k in range(r):
                     def_val = int(k*step)
                     if k == r-1 and r > 1: def_val = int(h - SPESSORE_LEGNO)
-                    # Anche qui key legata a module_id
                     val = st.number_input(f"M {k+1}", value=def_val, key=f"h_shelf_{module_id}_{k}")
                     mh.append(val)
                 z_shelves = [float(x) for x in mh]
@@ -228,13 +210,11 @@ with st.sidebar:
                     step = (h - SPESSORE_LEGNO)/(r-1)
                     z_shelves = [n*step for n in range(r)]
             
-            # Salviamo i dati in ordine visuale
             dati_colonne_ordinate.append({
                 "w":w, "h":h, "d":d, "r":r, "man":is_manual, "mh":z_shelves, 
                 "letter": module_letter, "pos": pos_index+1
             })
 
-            # CALCOLO FORI (usiamo la lettera per identificare il pezzo nel DXF)
             holes_coords = []
             for z in z_shelves:
                 cy = z + (SPESSORE_LEGNO / 2.0) 
@@ -264,7 +244,6 @@ def draw(x,y,z,dx,dy,dz,col,name):
     I,J,K = [0,0,4,4,0,0,2,2,3,3,1,1], [1,2,5,6,1,5,3,7,0,4,2,6], [2,3,6,7,5,4,7,6,4,7,6,5]
     return go.Mesh3d(x=xv, y=yv, z=zv, i=I, j=J, k=K, color=col, opacity=1, flatshading=True, name=name, lighting=dict(ambient=0.6, diffuse=0.8), hoverinfo='name')
 
-# Disegniamo usando l'ordine visuale
 for dc in dati_colonne_ordinate:
     lbl = f"Mod {dc['letter']}"
     fig.add_trace(draw(cx, 0, 0, SPESSORE_FERRO, dc["d"], dc["h"], C_IRON, f"Ferro SX {lbl}"))
@@ -281,29 +260,21 @@ def get_bin_stl(tris):
     for p in tris: out.write(struct.pack('<ffffffffffffH', 0,0,0, *p[0], *p[1], *p[2], 0))
     return out.getvalue()
 
-# NOMI FILE
 ts = get_timestamp_string()
 prj = st.session_state['project_name']
 fname_json = f"{prj}_{ts}.json"
 fname_stl = f"{prj}_{ts}.stl"
 fname_dxf = f"{prj}_{ts}_Taglio.dxf"
 
-# Salviamo la configurazione includendo l'ordine dei moduli
-# Per ripristinarlo correttamente dovremmo salvare anche module_order, ma per ora salviamo i dati grezzi.
-# Per semplicità, salviamo i dati nell'ordine ID originale per compatibilità.
-# (Ricostruzione dell'array cols basato sugli ID)
 cols_to_save = [None] * num_colonne
 for dc in dati_colonne_ordinate:
-    # Convertiamo lettera in indice (A->0, B->1)
     idx = ord(dc['letter']) - 65
     if idx < num_colonne:
          cols_to_save[idx] = {
              "w": dc['w'], "h": dc['h'], "d": dc['d'], "r": dc['r'], 
              "manual": dc['man'], "man_heights": dc['mh']
          }
-# Filtriamo eventuali None se riduciamo colonne
 cols_to_save = [c for c in cols_to_save if c is not None]
-
 proj_data = {"project_name": prj, "num_colonne":num_colonne, "cols":cols_to_save}
 
 with st.sidebar:
