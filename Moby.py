@@ -11,7 +11,7 @@ from datetime import datetime
 from fpdf import FPDF
 
 # --- 1. SETUP & LOGIN ---
-st.set_page_config(layout="wide", page_title="Moby v1.8.1 Visual Fix")
+st.set_page_config(layout="wide", page_title="Moby v1.9 Tech View")
 
 def check_login():
     if "logged_in" not in st.session_state:
@@ -45,7 +45,7 @@ OFFSET_LATERALI = 3.0
 PESO_SPECIFICO_FERRO = 7.85 
 PESO_SPECIFICO_LEGNO = 0.70 
 
-VERSION = "v1.8.1 Visual Fix"
+VERSION = "v1.9 Tech View"
 COPYRIGHT = "© Andrea Bossola 2025"
 stl_triangles = [] 
 
@@ -53,7 +53,7 @@ stl_triangles = []
 def get_timestamp_string(): return datetime.now().strftime("%Y%m%d_%H%M")
 def clean_filename(name): return "".join([c if c.isalnum() else "_" for c in name])
 
-# --- 3. PDF ENGINE ---
+# --- 3. PDF GENERATOR ENGINE ---
 class PDFReport(FPDF):
     def header(self):
         if os.path.exists("logo.png"):
@@ -103,9 +103,7 @@ def generate_pdf_report(project_name, parts_list, wood_data, iron_data, stats, c
         current_x += w + 1
         pdf.set_fill_color(0, 0, 0) 
         pdf.rect(current_x, start_y + (150 - h), 1, h, 'F') 
-        
-        # FIX: RIMOSSO SPAZIO EXTRA (Ora sono attaccati)
-        current_x += 0.5 # Lascio mezzo millimetro grafico giusto per non farli fondere visivamente nel PDF
+        current_x += 0.5 
     
     pdf.set_y(start_y + 160) 
     
@@ -450,39 +448,59 @@ with tab2:
     
     st.write("##")
     
-    # PLOTLY UNIFICATO E PULITO
+    # PLOTLY TECNICO
     fig_all = go.Figure()
     cursor_y_plot = 0
-    gap_plot = 30 # Gap visivo nell'anteprima
+    gap_plot = 30 
     
     for idx, part in enumerate(parts_list):
         dim_x, dim_y = part['h'], part['w']
-        # Rettangolo (Bianco ghiaccio #E0E0E0)
-        fig_all.add_shape(type="rect", x0=0, y0=cursor_y_plot, x1=dim_x, y1=cursor_y_plot+dim_y, line=dict(color="#E0E0E0", width=2))
         
-        # Buchi (Ciano)
-        x_holes = [hy for hx, hy in part['holes']] 
-        y_holes = [cursor_y_plot + hx for hx, hy in part['holes']] 
+        # Rettangolo (Linea Bianca Ghiaccio)
+        fig_all.add_shape(type="rect", x0=0, y0=cursor_y_plot, x1=dim_x, y1=cursor_y_plot+dim_y, line=dict(color="#EEEEEE", width=2))
+        
+        # Buchi (Ciano) e Misure Interasse
+        x_holes = [hy for hx, hy in part['holes']]
+        y_holes = [cursor_y_plot + hx for hx, hy in part['holes']]
         fig_all.add_trace(go.Scatter(x=x_holes, y=y_holes, mode='markers', marker=dict(color='#00FFFF', size=6), hoverinfo='skip'))
         
-        # Testo
-        fig_all.add_annotation(x=dim_x/2, y=cursor_y_plot + dim_y/2, text=part['lbl'], showarrow=False, font=dict(size=14, color="white"))
+        # 1. Etichetta Nome e Misure Totali (Sopra il pezzo)
+        fig_all.add_annotation(x=dim_x/2, y=cursor_y_plot + dim_y + 5, text=f"{part['lbl']} ({dim_x}x{dim_y})", showarrow=False, font=dict(size=14, color="white"))
+        
+        # 2. Quote Interasse (Tra i buchi)
+        unique_x = sorted(list(set(x_holes)))
+        for i in range(len(unique_x) - 1):
+            dist = unique_x[i+1] - unique_x[i]
+            mid_x = (unique_x[i] + unique_x[i+1]) / 2
+            # Posiziono la quota sotto il pezzo (o in mezzo se c'è spazio, ma sotto è più pulito)
+            fig_all.add_annotation(
+                x=mid_x, y=cursor_y_plot - 5, 
+                text=f"| {dist:.1f} |", 
+                showarrow=False, 
+                font=dict(size=10, color="#AAAAAA")
+            )
+
         cursor_y_plot += dim_y + gap_plot
 
     fig_all.update_layout(
-        xaxis=dict(title="Lunghezza (cm)", showgrid=True, zeroline=False, gridcolor='#333'),
-        # FIX PROPORZIONI: scaleanchor="x", scaleratio=1
-        yaxis=dict(title="Pezzi", showgrid=False, zeroline=False, showticklabels=False, scaleanchor="x", scaleratio=1),
-        height=600, margin=dict(l=10, r=10, t=10, b=10),
+        xaxis=dict(
+            title="Lunghezza (cm)", 
+            showgrid=True, 
+            gridcolor='#555', # Griglia 50cm (Main)
+            gridwidth=2,
+            dtick=50, # Label ogni 50
+            minor=dict(ticklen=5, tickcolor='#333', dtick=10, showgrid=True, gridcolor='#333', gridwidth=1), # Griglia 10cm (Minor)
+            zeroline=False
+        ),
+        yaxis=dict(title="", showgrid=False, zeroline=False, showticklabels=False, scaleanchor="x", scaleratio=1),
+        height=600, margin=dict(l=20, r=20, t=20, b=20),
         dragmode="pan", showlegend=False,
-        plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)' # Sfondo Trasparente
+        plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)'
     )
     
-    # Toolbar pulita
     config_plot = {'displayModeBar': True, 'displaylogo': False, 'modeBarButtonsToRemove': ['select2d', 'lasso2d', 'autoScale2d']}
     st.plotly_chart(fig_all, width="stretch", config=config_plot)
 
-    # Tabella Download Singoli
     with st.expander("📂 Scarica DXF Pezzi Singoli (Opzionale)"):
         for idx, part in enumerate(parts_list):
             c_name, c_down = st.columns([4, 1])
