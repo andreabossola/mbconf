@@ -11,7 +11,7 @@ from datetime import datetime
 from fpdf import FPDF
 
 # --- 1. SETUP & LOGIN ---
-st.set_page_config(layout="wide", page_title="Moby v1.9 Detail")
+st.set_page_config(layout="wide", page_title="Moby v1.9.1 Detail Fix")
 
 def check_login():
     if "logged_in" not in st.session_state:
@@ -45,7 +45,7 @@ OFFSET_LATERALI = 3.0
 PESO_SPECIFICO_FERRO = 7.85 
 PESO_SPECIFICO_LEGNO = 0.70 
 
-VERSION = "v1.9 Detail Edition"
+VERSION = "v1.9.1 Detail Zoom"
 COPYRIGHT = "© Andrea Bossola 2025"
 stl_triangles = [] 
 
@@ -81,7 +81,6 @@ class PDFReport(FPDF):
         self.line(x, y_start, x, y_end)
         self.line(x-1, y_start, x+1, y_start)
         self.line(x-1, y_end, x+1, y_end)
-        
         mid_y = (y_start + y_end) / 2
         self.set_font("Arial", '', 7)
         if align == 'L':
@@ -94,7 +93,7 @@ class PDFReport(FPDF):
 def generate_pdf_report(project_name, parts_list, wood_data, iron_data, stats, cols_data):
     pdf = PDFReport()
     
-    # PAG 1: COPERTINA
+    # PAG 1
     pdf.add_page()
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 10, f"Progetto: {project_name}", ln=True)
@@ -115,19 +114,20 @@ def generate_pdf_report(project_name, parts_list, wood_data, iron_data, stats, c
     
     for col in cols_data:
         h, w = col['h'] * scale, col['w'] * scale
-        pdf.set_fill_color(0, 0, 0) 
-        pdf.rect(current_x, start_y + (120 - h), 1, h, 'F') 
+        # DRAW ORDER FIX: PRIMA MENSOLE, POI FERRO
         pdf.set_fill_color(180, 180, 180) 
         if col['mh']:
             for z in col['mh']:
                 mz = z * scale
                 pdf.rect(current_x + 1, start_y + (120 - mz - (SPESSORE_LEGNO*scale)), w, (SPESSORE_LEGNO*scale), 'F') 
-        current_x += w + 1
+        
         pdf.set_fill_color(0, 0, 0) 
-        pdf.rect(current_x, start_y + (120 - h), 1, h, 'F') 
+        pdf.rect(current_x, start_y + (120 - h), 1, h, 'F') # SX
+        current_x += w + 1
+        pdf.rect(current_x, start_y + (120 - h), 1, h, 'F') # DX
         current_x += 0.5 
         
-    # PAG 2: TABELLE
+    # PAG 2
     pdf.add_page()
     pdf.set_fill_color(240, 240, 240)
     pdf.set_text_color(0, 0, 0)
@@ -174,28 +174,24 @@ def generate_pdf_report(project_name, parts_list, wood_data, iron_data, stats, c
             pdf.cell(40, 10, f"{row['Pezzi']}", 1)
             pdf.ln()
 
-    # PAG 3: PROSPETTO QUOTATO (FIXED)
+    # PAG 3: QUOTATO
     pdf.add_page()
     pdf.set_fill_color(240, 240, 240)
     pdf.set_text_color(0, 0, 0)
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 10, "PROSPETTO QUOTATO (INTERASSE FORI)", 0, 1, 'L', fill=True)
-    pdf.ln(15) # Spazio per quota totale
+    pdf.ln(15)
     
     start_y = pdf.get_y() + 10
     current_x = 20
-    tot_len_cm = sum([c['w'] + (SPESSORE_FERRO*2) for c in cols_data]) # Somma esatta
-    
-    pdf.draw_dimension_line_horz(20, 20 + (tot_len_cm * scale), start_y - 8, f"LARGHEZZA TOT: {tot_len_cm:.1f} cm")
+    tot_len_cm = sum([c['w'] + (SPESSORE_FERRO*2) for c in cols_data]) 
     
     pdf.line(10, start_y + 120, 200, start_y + 120) 
     
     for col in cols_data:
         h, w = col['h'] * scale, col['w'] * scale
         
-        # Disegno
-        pdf.set_fill_color(0, 0, 0) 
-        pdf.rect(current_x, start_y + (120 - h), 1, h, 'F') 
+        # DRAW ORDER FIX
         pdf.set_fill_color(180, 180, 180) 
         z_centers = []
         if col['mh']:
@@ -203,11 +199,12 @@ def generate_pdf_report(project_name, parts_list, wood_data, iron_data, stats, c
                 mz = z * scale
                 z_centers.append(z + (SPESSORE_LEGNO/2.0))
                 pdf.rect(current_x + 1, start_y + (120 - mz - (SPESSORE_LEGNO*scale)), w, (SPESSORE_LEGNO*scale), 'F') 
-        current_x += w + 1
+        
         pdf.set_fill_color(0, 0, 0) 
         pdf.rect(current_x, start_y + (120 - h), 1, h, 'F') 
+        current_x += w + 1
+        pdf.rect(current_x, start_y + (120 - h), 1, h, 'F') 
         
-        # Quote (Solo testo)
         pdf.set_font("Arial", '', 7)
         pdf.set_text_color(0, 0, 0)
         x_quota = current_x - (w/2) - 1
@@ -219,18 +216,20 @@ def generate_pdf_report(project_name, parts_list, wood_data, iron_data, stats, c
                 pdf.set_xy(x_quota - 5, y_mid - 2)
                 pdf.cell(10, 4, f"{dist:.1f}", 0, 0, 'C')
         
-        # Label
         pdf.set_xy(current_x - w - 1, start_y + 122)
         pdf.set_font("Arial", 'B', 8)
         pdf.cell(w+2, 5, f"Mod.{col['letter']}", 0, 1, 'C')
         
-        current_x += 5 # Spazio grafico tra moduli quotati (qui ci vuole per leggerezza)
+        current_x += 5 
+
+    # QUOTA TOTALE IN BASSO
+    pdf.draw_dimension_line_horz(20, 20 + (tot_len_cm * scale), start_y + 135, f"LARGHEZZA TOT: {tot_len_cm:.1f} cm")
 
     pdf.set_y(-20)
     pdf.set_font("Arial", 'I', 8)
     pdf.cell(0, 10, "* Le quote interne indicano la distanza (interasse) tra i fori delle mensole.", 0, 1, 'L')
 
-    # PAG 4: PIANTA (FIXED)
+    # PAG 4: PIANTA
     pdf.add_page()
     pdf.set_fill_color(240, 240, 240)
     pdf.set_text_color(0, 0, 0)
@@ -247,23 +246,19 @@ def generate_pdf_report(project_name, parts_list, wood_data, iron_data, stats, c
     for col in cols_data:
         w_draw = (col['w'] + (SPESSORE_FERRO*2)) * scale
         d_draw = col['d'] * scale
-        
         pdf.set_fill_color(255, 255, 255)
         pdf.set_draw_color(0, 0, 0)
         pdf.rect(current_x, start_y, w_draw, d_draw)
         
-        # Profondità (dentro)
         pdf.set_xy(current_x, start_y + (d_draw/2) - 2)
         pdf.set_font("Arial", '', 8)
         pdf.cell(w_draw, 4, f"P: {col['d']:.0f}", 0, 0, 'C')
         
-        # Larghezza (sotto)
         pdf.draw_dimension_line_horz(current_x, current_x + w_draw, start_y + d_draw + 5, f"{col['w']:.0f}")
-        
-        current_x += w_draw # Attaccati
+        current_x += w_draw 
 
-    # --- PAGINE DETTAGLIO SINGOLO MODULO (NEW) ---
-    scale_det = 0.25 # Scala per il dettaglio (deve starci in metà pagina)
+    # --- PAGINE DETTAGLIO SINGOLO MODULO (ZOOMED) ---
+    scale_det = 0.35 # AUMENTATA SCALA
     
     for col in cols_data:
         pdf.add_page()
@@ -275,72 +270,55 @@ def generate_pdf_report(project_name, parts_list, wood_data, iron_data, stats, c
         pdf.cell(0, 8, f"Dimensioni: {col['w']} (L) x {col['h']} (H) x {col['d']} (P) cm  |  {col['r']} Mensole", 0, 1, 'L')
         pdf.ln(10)
         
-        base_y = pdf.get_y() + 150 # Linea terra locale
-        center_x = 105 # Centro pagina A4
+        base_y = pdf.get_y() + 200 # Spazio aumentato
+        center_x = 105 
         
-        # VISTA FRONTALE (a sinistra)
-        x_front = center_x - 60
-        h_front = col['h'] * scale_det
+        # VISTA FRONTALE (SX)
         w_front = col['w'] * scale_det
+        h_front = col['h'] * scale_det
+        x_front = center_x - w_front - 20 # Spostato più a sinistra
         
-        pdf.set_fill_color(0,0,0)
-        pdf.rect(x_front, base_y - h_front, 1, h_front, 'F')
-        pdf.rect(x_front + w_front, base_y - h_front, 1, h_front, 'F')
-        pdf.set_fill_color(180,180,180)
-        
-        z_vals = [] # Salviamo Z per le quote
+        # Disegno Frontale (Ordine Corretto)
+        z_vals = [] 
         if col['mh']:
             for z in col['mh']:
                 z_vals.append(z + (SPESSORE_LEGNO/2.0))
                 mz = z * scale_det
+                pdf.set_fill_color(180,180,180)
                 pdf.rect(x_front + 1, base_y - mz - (SPESSORE_LEGNO*scale_det), w_front, (SPESSORE_LEGNO*scale_det), 'F')
+        
+        pdf.set_fill_color(0,0,0)
+        pdf.rect(x_front, base_y - h_front, 1, h_front, 'F')
+        pdf.rect(x_front + w_front, base_y - h_front, 1, h_front, 'F')
         
         pdf.set_xy(x_front, base_y - h_front - 5)
         pdf.set_font("Arial", 'B', 8)
         pdf.cell(w_front, 5, "VISTA FRONTALE", 0, 0, 'C')
-        
         pdf.draw_dimension_line_horz(x_front, x_front + w_front, base_y + 5, f"L: {col['w']:.0f}")
 
-        # ASSE CENTRALE CON QUOTE
+        # ASSE CENTRALE
         line_x = center_x
         line_top = base_y - h_front
         line_bot = base_y
-        
         pdf.line(line_x, line_top, line_x, line_bot)
-        
-        # Quota Totale (SX)
         pdf.draw_dimension_line_vert(line_x, line_top, line_bot, f"H Tot: {col['h']:.1f}", 'R')
         
-        # Quote Parziali (DX)
         z_vals_sorted = sorted(z_vals)
-        # Aggiungiamo 0 e H totale ai punti
         points = [0.0] + z_vals_sorted + [col['h']]
-        
-        # Disegna tick e quote
-        last_y = line_bot
         for i in range(len(points)-1):
-            # Attenzione: points è ordinato dal basso (0) all'alto (H)
-            # Nel PDF Y cresce verso il basso. 
-            # y_val (cm dal suolo) -> PDF Y = base_y - (val * scale)
-            
             val_curr = points[i]
             val_next = points[i+1]
-            
             y_curr = base_y - (val_curr * scale_det)
             y_next = base_y - (val_next * scale_det)
-            
-            # Tick
             pdf.line(line_x - 1, y_curr, line_x + 1, y_curr)
             pdf.line(line_x - 1, y_next, line_x + 1, y_next)
-            
-            # Quota DX
             dist = val_next - val_curr
-            if dist > 2: # Scrivi solo se c'è spazio grafico
+            if dist > 2: 
                 mid_y_quota = (y_curr + y_next) / 2
                 pdf.set_xy(line_x + 2, mid_y_quota - 2)
                 pdf.cell(10, 4, f"{dist:.1f}", 0, 0, 'L')
 
-        # VISTA LATERALE (a destra)
+        # VISTA LATERALE (DX)
         x_side = center_x + 40
         w_side = col['d'] * scale_det
         h_side = col['h'] * scale_det
@@ -349,7 +327,6 @@ def generate_pdf_report(project_name, parts_list, wood_data, iron_data, stats, c
         pdf.set_draw_color(0,0,0)
         pdf.rect(x_side, base_y - h_side, w_side, h_side)
         
-        # Fori
         pdf.set_fill_color(0,0,0)
         holes_x = [OFFSET_LATERALI, col['d']/2, col['d']-OFFSET_LATERALI]
         for z in z_vals:
@@ -361,12 +338,12 @@ def generate_pdf_report(project_name, parts_list, wood_data, iron_data, stats, c
         pdf.set_xy(x_side, base_y - h_side - 5)
         pdf.set_font("Arial", 'B', 8)
         pdf.cell(w_side, 5, "VISTA LATERALE", 0, 0, 'C')
-        
         pdf.draw_dimension_line_horz(x_side, x_side + w_side, base_y + 5, f"P: {col['d']:.0f}")
 
-    # --- PAGINE ESECUTIVI TAGLIO (Vecchie ma utili) ---
+    # --- PAGINE ESECUTIVI ---
     pdf.add_page()
     pdf.set_fill_color(240, 240, 240)
+    pdf.set_text_color(0, 0, 0)
     pdf.cell(0, 10, "ESECUTIVI DI TAGLIO (FERRO)", 0, 1, 'L', fill=True)
     pdf.ln(10)
     scale_cut = 0.5 
@@ -381,7 +358,8 @@ def generate_pdf_report(project_name, parts_list, wood_data, iron_data, stats, c
         pdf.rect(start_x, cursor_y, part['h']*scale_cut, part['w']*scale_cut)
         pdf.set_fill_color(0, 0, 0) 
         for hx, hy in part['holes']:
-            cx, cy = start_x + (hy * scale_cut), cursor_y + (hx * scale_cut)
+            cx = start_x + (hy * scale_cut)
+            cy = cursor_y + (hx * scale_cut)
             pdf.ellipse(cx-0.5, cy-0.5, 1.0, 1.0, 'F')
         pdf.set_xy(start_x, cursor_y - 6)
         pdf.set_font("Arial", 'B', 9)
