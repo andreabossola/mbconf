@@ -395,7 +395,12 @@ def calculate_quote(stats, user_inputs):
 
 # --- 6. SIDEBAR & DATA ---
 with st.sidebar:
-    st.image("logo.png", width=150) if os.path.exists("logo.png") else st.title("MOBY ERP")
+    # CORREZIONE: Usiamo un if/else esplicito per evitare che stampi il codice a video
+    if os.path.exists("logo.png"):
+        st.image("logo.png", width=150)
+    else:
+        st.title("MOBY ERP")
+        
     st.markdown("---")
     
     st.session_state.setdefault('project_name', "Progetto_01")
@@ -569,3 +574,4 @@ with tab_prev:
         st.json(totals)
         st.write("Configurazione Parametri Attuale:")
         st.json(st.session_state.erp_config)
+
