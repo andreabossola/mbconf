@@ -11,7 +11,7 @@ from datetime import datetime
 from fpdf import FPDF
 
 # --- 1. SETUP & LOGIN ---
-st.set_page_config(layout="wide", page_title="Moby v1.6.1 PDF Fix")
+st.set_page_config(layout="wide", page_title="Moby v1.6.2 PDF Ready")
 
 def check_login():
     if "logged_in" not in st.session_state:
@@ -45,7 +45,7 @@ OFFSET_LATERALI = 3.0
 PESO_SPECIFICO_FERRO = 7.85 
 PESO_SPECIFICO_LEGNO = 0.70 
 
-VERSION = "v1.6.1 PDF Fix"
+VERSION = "v1.6.2 PDF Fix"
 COPYRIGHT = "© Andrea Bossola 2025"
 stl_triangles = [] 
 
@@ -53,16 +53,13 @@ stl_triangles = []
 def get_timestamp_string(): return datetime.now().strftime("%Y%m%d_%H%M")
 def clean_filename(name): return "".join([c if c.isalnum() else "_" for c in name])
 
-# --- 3. PDF GENERATOR ENGINE (SAFE MODE) ---
+# --- 3. PDF GENERATOR ENGINE ---
 class PDFReport(FPDF):
     def header(self):
-        # PROVA A CARICARE IL LOGO, SE FALLISCE CONTINUA SENZA
         if os.path.exists("logo.png"):
             try:
                 self.image("logo.png", 10, 8, 33)
-            except Exception:
-                pass # Se il logo è 16-bit o corrotto, lo ignora
-                
+            except: pass
         self.set_font('Arial', 'B', 15)
         self.cell(0, 10, 'SCHEDA TECNICA DI PRODUZIONE', 0, 1, 'R')
         self.ln(20)
@@ -132,10 +129,13 @@ def generate_pdf_report(project_name, parts_list, wood_data, stats):
         start_x = 20
         pdf.rect(start_x, cursor_y, part['h']*scale, part['w']*scale)
         
+        # Disegna Fori (FIXED: Usa Ellipse invece di Circle)
         for hx, hy in part['holes']:
             cx = start_x + (hy * scale)
             cy = cursor_y + (hx * scale)
-            pdf.circle(cx, cy, 1.0) 
+            r = 1.0 # Raggio visuale
+            # x, y, w, h (diametro)
+            pdf.ellipse(cx - r, cy - r, r*2, r*2)
             
         pdf.set_xy(start_x, cursor_y - 5)
         pdf.set_font("Arial", 'B', 8)
@@ -391,7 +391,6 @@ with tab2:
     c_info3.metric("Peso Legno", f"{stats['peso_legno']:.1f} kg")
     c_info4.metric("Viteria", f"{num_viti} pz")
     
-    # GENERAZIONE PDF (SAFE)
     if st.button("📄 GENERA SCHEDA TECNICA PDF", type="primary", use_container_width=True):
         pdf_bytes = generate_pdf_report(prj, parts_list, distinta_legno_pdf, stats)
         st.download_button("📥 SCARICA PDF", pdf_bytes, fname_pdf, "application/pdf")
