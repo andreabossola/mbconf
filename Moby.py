@@ -11,7 +11,7 @@ from datetime import datetime
 from fpdf import FPDF
 
 # --- 1. SETUP & LOGIN ---
-st.set_page_config(layout="wide", page_title="Moby v22.1 Final")
+st.set_page_config(layout="wide", page_title="Moby v23 Camera Fix")
 
 def check_login():
     if "logged_in" not in st.session_state:
@@ -45,7 +45,7 @@ OFFSET_LATERALI = 3.0
 PESO_SPECIFICO_FERRO = 7.85 
 PESO_SPECIFICO_LEGNO = 0.70 
 
-VERSION = "v22.1 Camera Fix"
+VERSION = "v23 Camera Perfected"
 COPYRIGHT = "© Andrea Bossola 2025"
 stl_triangles = [] 
 
@@ -53,7 +53,7 @@ stl_triangles = []
 def get_timestamp_string(): return datetime.now().strftime("%Y%m%d_%H%M")
 def clean_filename(name): return "".join([c if c.isalnum() else "_" for c in name])
 
-# --- 3. PDF ENGINE ---
+# --- 3. PDF GENERATOR ENGINE ---
 class PDFReport(FPDF):
     def __init__(self, project_name):
         super().__init__()
@@ -488,9 +488,9 @@ with st.sidebar:
             d = c2.number_input("P", 20, 100, value=def_d, key=f"d_{i}")
             c3, c4 = st.columns(2)
             h = c3.number_input("H", 50, 400, value=def_h, key=f"h_{i}")
-            r = c4.number_input("Alt. Mensole", 1, 20, value=def_r, key=f"r_{i}") # FIX NOME
+            r = c4.number_input("Alt. Mensole", 1, 20, value=def_r, key=f"r_{i}")
             
-            is_manual = st.checkbox("Libera", value=def_man, key=f"man_{i}")
+            is_manual = st.checkbox("Alt. Mensole", value=def_man, key=f"man_{i}")
             mh = []
             z_shelves = []
             if is_manual:
@@ -525,9 +525,7 @@ with st.sidebar:
 
     # --- 3D PLOT ---
     fig = go.Figure()
-    # FIX CAMERA: X=0 (centrata), Y=-2.5 (frontale distante), Z=0.8 (altezza occhi)
-    camera = dict(eye=dict(x=0.0, y=-2.5, z=0.8)) 
-    
+    camera = dict(eye=dict(x=0.0, y=2.5, z=0.1)) 
     cx = 0 
     for dc in dati_colonne:
         lbl = f"Mod {dc['letter']}"
