@@ -11,7 +11,7 @@ from datetime import datetime
 from fpdf import FPDF
 
 # --- 1. SETUP & LOGIN ---
-st.set_page_config(layout="wide", page_title="Moby v1.7 PDF Final")
+st.set_page_config(layout="wide", page_title="Moby v1.7.1 Final Fix")
 
 def check_login():
     if "logged_in" not in st.session_state:
@@ -45,7 +45,7 @@ OFFSET_LATERALI = 3.0
 PESO_SPECIFICO_FERRO = 7.85 
 PESO_SPECIFICO_LEGNO = 0.70 
 
-VERSION = "v1.7 PDF Perfected"
+VERSION = "v1.7.1 PDF Fix"
 COPYRIGHT = "© Andrea Bossola 2025"
 stl_triangles = [] 
 
@@ -84,40 +84,30 @@ def generate_pdf_report(project_name, parts_list, wood_data, iron_data, stats, c
     pdf.cell(0, 10, "PROSPETTO FRONTALE (SCHEMATICO)", 1, 1, 'L', fill=True)
     pdf.ln(5)
     
-    # Logica disegno frontale
     start_x = 20
     start_y = pdf.get_y()
-    scale = 0.4 # Scala piccola per overview
+    scale = 0.4 
     
     current_x = start_x
-    max_h = 0
     
-    # Disegna pavimento
-    pdf.line(10, start_y + 150, 200, start_y + 150)
+    pdf.line(10, start_y + 150, 200, start_y + 150) # Pavimento
     
     for col in cols_data:
         h = col['h'] * scale
         w = col['w'] * scale
         
-        # Ferro SX
-        pdf.rect(current_x, start_y + (150 - h), 1, h, 'F') # Pieno nero
-        
-        # Mensole
+        pdf.rect(current_x, start_y + (150 - h), 1, h, 'F') # Ferro SX
         if col['mh']:
             for z in col['mh']:
                 mz = z * scale
-                # Mensola (rettangolo vuoto o grigio)
-                pdf.rect(current_x + 1, start_y + (150 - mz - 2), w, 2) 
-        
+                pdf.rect(current_x + 1, start_y + (150 - mz - 2), w, 2) # Mensola
         current_x += w + 1
-        # Ferro DX
-        pdf.rect(current_x, start_y + (150 - h), 1, h, 'F')
-        
-        current_x += 2 # Spazio tra moduli
+        pdf.rect(current_x, start_y + (150 - h), 1, h, 'F') # Ferro DX
+        current_x += 2 
     
-    pdf.set_y(start_y + 160) # Sposta cursore sotto il disegno
+    pdf.set_y(start_y + 160) 
     
-    # RIEPILOGO DATI
+    # RIEPILOGO
     pdf.cell(0, 10, "RIEPILOGO LOGISTICA", 1, 1, 'L', fill=True)
     pdf.set_font("Arial", size=10)
     pdf.cell(45, 10, f"Peso Ferro: {stats['peso_ferro']:.1f} kg", 1)
@@ -126,7 +116,7 @@ def generate_pdf_report(project_name, parts_list, wood_data, iron_data, stats, c
     pdf.cell(55, 10, f"Viteria: {stats['viti']} pz", 1, 1)
     pdf.ln(10)
     
-    # TABELLA FERRO
+    # TABELLE
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 10, "DISTINTA FERRO (Fianchi)", 1, 1, 'L', fill=True)
     pdf.set_font("Arial", 'B', 10)
@@ -143,7 +133,6 @@ def generate_pdf_report(project_name, parts_list, wood_data, iron_data, stats, c
             pdf.ln()
     pdf.ln(10)
 
-    # TABELLA LEGNO
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 10, "DISTINTA LEGNO (Mensole)", 1, 1, 'L', fill=True)
     pdf.set_font("Arial", 'B', 10)
@@ -152,44 +141,40 @@ def generate_pdf_report(project_name, parts_list, wood_data, iron_data, stats, c
     pdf.cell(40, 10, "Quantità", 1)
     pdf.cell(40, 10, "Metri Totali", 1, 1)
     pdf.set_font("Arial", size=10)
-    
     if not wood_data.empty:
         for index, row in wood_data.iterrows():
             pdf.cell(40, 10, f"{row['Larghezza']:.1f} cm", 1)
             pdf.cell(40, 10, f"{row['Profondità']:.1f} cm", 1)
             pdf.cell(40, 10, f"{row['Pezzi']} pz", 1)
             pdf.cell(40, 10, f"{row['Metri Totali']:.1f} m", 1, 1)
-    else:
-        pdf.cell(160, 10, "Nessuna mensola configurata", 1, 1, 'C')
-        
     pdf.ln(10)
     
-    # DISEGNI TECNICI FERRO
+    # DISEGNI TECNICI
     pdf.add_page()
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(0, 10, "SCHEDE TECNICHE DI TAGLIO E FORATURA", 1, 1, 'L', fill=True)
-    pdf.ln(10) # Spazio extra per non toccare logo
+    pdf.ln(15) # Spazio extra sicurezza logo
     
     scale = 0.5 
-    cursor_y = pdf.get_y() + 10 # Margine sicurezza logo
+    cursor_y = pdf.get_y()
     
     for part in parts_list:
         req_h = (part['w'] * scale) + 25
         if cursor_y + req_h > 270:
             pdf.add_page()
-            cursor_y = 40 # Ripartiamo bassi per il logo
+            cursor_y = 40 # Margine alto pagina nuova
             
         start_x = 20
-        # Rettangolo
         pdf.rect(start_x, cursor_y, part['h']*scale, part['w']*scale)
         
-        # Fori (Pallini pieni piccoli)
-        pdf.set_fill_color(0, 0, 0) # Nero
+        # Fori Pieni (ELLIPSE FIX)
+        pdf.set_fill_color(0, 0, 0) 
         for hx, hy in part['holes']:
             cx = start_x + (hy * scale)
             cy = cursor_y + (hx * scale)
-            r = 0.5 # Raggio molto piccolo per fare il punto
-            pdf.circle(cx, cy, r, 'F') 
+            r = 0.5 
+            # x, y, w, h, style
+            pdf.ellipse(cx-r, cy-r, r*2, r*2, 'F') 
             
         pdf.set_xy(start_x, cursor_y - 6)
         pdf.set_font("Arial", 'B', 9)
@@ -361,10 +346,7 @@ with st.sidebar:
                     step = (h - SPESSORE_LEGNO)/(r-1)
                     z_shelves = [n*step for n in range(r)]
             
-            # SALVO I DATI ANCHE PER IL PROSPETTO FRONTALE PDF
-            dati_colonne.append({
-                "w":w, "h":h, "d":d, "r":r, "man":is_manual, "mh":z_shelves, "letter": module_letter
-            })
+            dati_colonne.append({"w":w, "h":h, "d":d, "r":r, "man":is_manual, "mh":z_shelves, "letter": module_letter})
 
             holes_coords = []
             for z in z_shelves:
@@ -375,9 +357,8 @@ with st.sidebar:
             
             parts_list.append({"w": d, "h": h, "lbl": f"Mod_{module_letter}_SX", "holes": holes_coords})
             parts_list.append({"w": d, "h": h, "lbl": f"Mod_{module_letter}_DX", "holes": holes_coords})
-            
-            iron_stats_list.append({"h": h, "w": d}) # SX
-            iron_stats_list.append({"h": h, "w": d}) # DX
+            iron_stats_list.append({"Altezza": h, "Profondità": d}) 
+            iron_stats_list.append({"Altezza": h, "Profondità": d})
             
             for _ in range(r): wood_list.append({"w": w, "d": d})
 
@@ -439,7 +420,6 @@ with tab2:
         "viti": num_viti
     }
     
-    # TABELLA LEGNO
     df_legno = pd.DataFrame(wood_list)
     distinta_legno_pdf = pd.DataFrame()
     if not df_legno.empty:
@@ -448,12 +428,11 @@ with tab2:
         distinta_legno_pdf['Metri Totali'] = (distinta_legno_pdf['w'] * distinta_legno_pdf['Quantità']) / 100.0
         distinta_legno_pdf.columns = ['Larghezza', 'Profondità', 'Pezzi', 'Metri Totali']
         
-    # TABELLA FERRO (NUOVA)
     df_ferro = pd.DataFrame(iron_stats_list)
     distinta_ferro_pdf = pd.DataFrame()
     if not df_ferro.empty:
         df_ferro['Quantità'] = 1
-        distinta_ferro_pdf = df_ferro.groupby(['h', 'w']).count().reset_index()
+        distinta_ferro_pdf = df_ferro.groupby(['Altezza', 'Profondità']).count().reset_index()
         distinta_ferro_pdf.columns = ['Altezza', 'Profondità', 'Pezzi']
     
     c_info1, c_info2, c_info3, c_info4 = st.columns(4)
