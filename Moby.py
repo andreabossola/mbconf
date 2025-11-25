@@ -54,7 +54,7 @@ VONTREE_DATA = {
     "email": "info@vontree.it"
 }
 
-VERSION = "v25.1 Visual Fix"
+VERSION = "v25.3 Final Layout"
 COPYRIGHT = "© Andrea Bossola 2025"
 stl_triangles = [] 
 
@@ -100,7 +100,7 @@ def load_payments_list():
 
 load_costs_config()
 
-# --- 4. PDF ENGINE & DRAWING HELPER ---
+# --- 4. PDF ENGINE ---
 class PDFReport(FPDF):
     def __init__(self, project_name, colors, is_commercial=False):
         super().__init__()
@@ -139,92 +139,86 @@ class PDFReport(FPDF):
         self.set_draw_color(0,0,0); self.line(x_start, y, x_end, y); self.line(x_start, y-1, x_start, y+1); self.line(x_end, y-1, x_end, y+1)
         self.set_xy(x_start, y - 4); self.set_font("Arial", '', 8); self.cell(x_end - x_start, 4, text, 0, 0, 'C')
 
-# --- DISEGNO PROSPETTO CONDIVISO ---
-def draw_frontal_schema(pdf, start_x, start_y, cols_data, scale):
+# --- DISEGNO PROSPETTO (CON FLAGS MUTO/QUOTATO) ---
+def draw_frontal_schema(pdf, start_x, start_y, cols_data, scale, draw_quotes=True):
     current_x = start_x
     tot_width = 0
     w_ferro_pdf = 0.3
-    
-    # Linea Terra
     max_h = max([c['h'] for c in cols_data])
     floor_y = start_y + (max_h * scale) + 10
-    pdf.line(start_x - 10, floor_y, start_x + (len(cols_data)*70)*scale, floor_y) # Approx length
+    pdf.line(start_x - 10, floor_y, start_x + (len(cols_data)*70)*scale, floor_y)
     
     for col in cols_data:
         h = col['h'] * scale
         w = col['w'] * scale
         
         # Ferro SX
-        pdf.set_fill_color(0, 0, 0)
-        pdf.rect(current_x, floor_y - h, w_ferro_pdf, h, 'F')
+        pdf.set_fill_color(0, 0, 0); pdf.rect(current_x, floor_y - h, w_ferro_pdf, h, 'F')
         
-        # Mensole e Quote
+        raw_levels = [0.0] + sorted(col['mh']) + [col['h']]
+        
+        # Mensole
         pdf.set_fill_color(220, 220, 220)
-        
-        # Calcolo spazi
-        z_levels = sorted(col['mh'])
-        z_levels_draw = [z * scale for z in z_levels]
-        # Aggiungo top e bottom logici
-        levels_calc = [0.0] + z_levels + [col['h']]
-        
-        # Disegno Mensole
-        for mz in z_levels_draw:
+        for z in col['mh']:
+            mz = z * scale
             pdf.rect(current_x + w_ferro_pdf, floor_y - mz - (SPESSORE_LEGNO*scale), w, (SPESSORE_LEGNO*scale), 'F')
-        
-        # Disegno Quote Interne
-        pdf.set_text_color(0,0,0)
-        pdf.set_font("Arial", '', 7)
-        for i in range(len(levels_calc)-1):
-            val_bot = levels_calc[i]
-            val_top = levels_calc[i+1]
-            dist = val_top - val_bot
-            if i < len(levels_calc)-1: dist -= SPESSORE_LEGNO # Tolgo spessore tranne ultimo step teorico
             
-            # Centro Y del vano
-            y_bot_px = floor_y - (val_bot * scale)
-            y_top_px = floor_y - (val_top * scale)
-            mid_y = (y_bot_px + y_top_px) / 2
-            
-            if dist > 5: # Scrivo solo se c'è spazio
-                pdf.set_xy(current_x + w_ferro_pdf, mid_y - 2)
-                pdf.cell(w, 4, f"{dist:.1f}", 0, 0, 'C')
+        # QUOTE (Solo se richiesto)
+        if draw_quotes:
+            pdf.set_text_color(0,0,0)
+            pdf.set_font("Arial", '', 7)
+            for i in range(len(raw_levels) - 1):
+                val_bot = raw_levels[i]
+                val_top = raw_levels[i+1]
+                dist = val_top - val_bot
+                if i < len(raw_levels) - 1: dist -= SPESSORE_LEGNO
+                if dist > 3.0:
+                    y_bot_px = floor_y - (val_bot * scale)
+                    y_top_px = floor_y - (val_top * scale)
+                    mid_y = (y_bot_px + y_top_px) / 2
+                    pdf.set_xy(current_x + w_ferro_pdf, mid_y - 2)
+                    pdf.cell(w, 4, f"{dist:.1f}", 0, 0, 'C')
 
         current_x += w + w_ferro_pdf
-        
         # Ferro DX
-        pdf.set_fill_color(0, 0, 0)
-        pdf.rect(current_x, floor_y - h, w_ferro_pdf, h, 'F')
+        pdf.set_fill_color(0, 0, 0); pdf.rect(current_x, floor_y - h, w_ferro_pdf, h, 'F')
         
-        # Label Modulo
+        # Label (Sempre visibile)
         pdf.set_xy(current_x - w/2 - w_ferro_pdf, floor_y + 2)
-        pdf.set_font("Arial", 'B', 8)
-        pdf.cell(10, 5, f"Mod.{col['letter']}", 0, 0, 'C')
+        pdf.set_font("Arial", 'B', 8); pdf.cell(10, 5, f"Mod.{col['letter']}", 0, 0, 'C')
         
         current_x += w_ferro_pdf + 0.2
-        tot_width += col['w'] + (SPESSORE_FERRO*2) # Approx
-
-    # Totale Larghezza Sotto
-    pdf.draw_dimension_line_horz(start_x, current_x - 0.2, floor_y + 10, f"LARGHEZZA TOT: {tot_width:.1f} cm")
-    
-    return floor_y + 20 # Ritorna Y finale
+        tot_width += col['w'] + (SPESSORE_FERRO*2)
+        
+    if draw_quotes:
+        pdf.draw_dimension_line_horz(start_x, current_x - 0.2, floor_y + 10, f"LARGHEZZA TOT: {tot_width:.1f} cm")
+        
+    return floor_y + 20 
 
 def generate_pdf_report(project_name, parts_list, wood_data, iron_data, stats, cols_data, colors):
     pdf = PDFReport(project_name, colors, is_commercial=False)
     
-    # PAG 1: PROSPETTO
-    pdf.add_page(); pdf.set_fill_color(240, 240, 240); pdf.set_text_color(0, 0, 0); pdf.set_font("Arial", 'B', 11); pdf.cell(0, 8, "PROSPETTO QUOTATO", 0, 1, 'L', fill=True)
-    pdf.set_font("Arial", 'I', 8); pdf.cell(0, 6, "* Le quote interne indicano la distanza (interasse) tra i fori delle mensole.", 0, 1, 'L'); pdf.ln(10)
+    # PAG 1: PROSPETTO MUTO (False)
+    pdf.add_page(); pdf.set_fill_color(240, 240, 240); pdf.set_text_color(0, 0, 0); pdf.set_font("Arial", 'B', 11); pdf.cell(0, 8, "PROSPETTO FRONTALE (MUTO)", 0, 1, 'L', fill=True); pdf.ln(10)
+    draw_frontal_schema(pdf, 20, pdf.get_y(), cols_data, 0.35, draw_quotes=False)
     
-    # DISEGNO TECNICO
-    draw_frontal_schema(pdf, 20, pdf.get_y(), cols_data, 0.35)
-    
+    # PAG 2: DISTINTE
     pdf.add_page(); pdf.set_fill_color(240, 240, 240); pdf.set_font("Arial", 'B', 11); pdf.cell(0, 8, "RIEPILOGO MATERIALI", 0, 1, 'L', fill=True); pdf.ln(2); pdf.set_font("Arial", size=10)
     pdf.cell(45, 8, f"Peso Ferro: {stats['peso_ferro']:.1f} kg", 1); pdf.cell(45, 8, f"Peso Legno: {stats['peso_legno']:.1f} kg", 1); pdf.cell(45, 8, f"Totale: {stats['peso_tot']:.1f} kg", 1); pdf.cell(55, 8, f"Viteria: {stats['viti']} pz", 1, 1); pdf.ln(10)
     pdf.set_font("Arial", 'B', 11); pdf.cell(0, 8, "DISTINTA LEGNO", 0, 1, 'L', fill=True); pdf.ln(2); pdf.set_font("Arial", 'B', 9)
     if not wood_data.empty:
         for index, row in wood_data.iterrows(): pdf.cell(40, 8, f"{row['Larghezza']:.0f} x {row['Profondità']:.0f}", 1); pdf.cell(40, 8, f"{row['Pezzi']}", 1); pdf.cell(40, 8, f"{row['Metri Totali']:.1f} m", 1, 1)
+    pdf.ln(10); pdf.set_font("Arial", 'B', 11); pdf.cell(0, 8, "DISTINTA FERRO", 0, 1, 'L', fill=True); pdf.ln(2)
+    if not iron_data.empty:
+        for index, row in iron_data.iterrows(): pdf.cell(40, 8, f"{row['Altezza']:.0f} x {row['Profondità']:.0f}", 1); pdf.cell(40, 8, f"{row['Pezzi']}", 1); pdf.ln()
+        
+    # PAG 3: PROSPETTO QUOTATO (True)
+    pdf.add_page(); pdf.set_fill_color(240, 240, 240); pdf.set_font("Arial", 'B', 11); pdf.cell(0, 8, "PROSPETTO QUOTATO (INTERASSE FORI)", 0, 1, 'L', fill=True)
+    pdf.set_font("Arial", 'I', 8); pdf.cell(0, 6, "* Le quote interne indicano la luce netta (o interasse) tra le mensole.", 0, 1, 'L'); pdf.ln(10)
+    draw_frontal_schema(pdf, 20, pdf.get_y(), cols_data, 0.35, draw_quotes=True)
     
-    pdf.add_page(); pdf.set_fill_color(240, 240, 240); pdf.set_font("Arial", 'B', 11); pdf.cell(0, 8, "PIANTA", 0, 1, 'L', fill=True); pdf.ln(20)
+    # PAG 4: PIANTA
+    pdf.add_page(); pdf.set_fill_color(240, 240, 240); pdf.set_font("Arial", 'B', 11); pdf.cell(0, 8, "PIANTA (VISTA DALL'ALTO)", 0, 1, 'L', fill=True); pdf.ln(20)
     tot_len_cm = sum([c['w'] + (SPESSORE_FERRO*2) for c in cols_data]); scale_pianta = 0.65; start_x = 70; start_y = pdf.get_y() + 20; current_y = start_y
     pdf.draw_dimension_line_vert(start_x - 15, start_y, start_y + (tot_len_cm * scale_pianta), f"TOT: {tot_len_cm:.1f}", 'R')
     for col in cols_data:
@@ -233,6 +227,7 @@ def generate_pdf_report(project_name, parts_list, wood_data, iron_data, stats, c
         pdf.set_xy(start_x, current_y - 5); pdf.set_font("Arial", '', 8); pdf.cell(d_mod_scaled, 5, f"P: {col['d']:.0f}", 0, 0, 'C')
         pdf.draw_dimension_line_vert(start_x + d_mod_scaled + 5, current_y, current_y + w_mod_scaled, f"{col['w']:.0f}", 'L'); current_y += w_mod_scaled 
     
+    # PAG 5+: DETTAGLI
     scale_det = 0.45 
     for col in cols_data:
         pdf.add_page(); pdf.set_fill_color(240, 240, 240); pdf.set_font("Arial", 'B', 11); pdf.cell(0, 8, f"DETTAGLIO MODULO {col['letter']}", 0, 1, 'L', fill=True)
@@ -259,18 +254,20 @@ def generate_pdf_report(project_name, parts_list, wood_data, iron_data, stats, c
 
 def generate_commercial_pdf(project_data, totals, client_data, payment_info, notes, cols_data):
     pdf = PDFReport(project_data['project_name'], {}, is_commercial=True)
+    # PAG 1: Intestazione e Disegno
     pdf.add_page()
     pdf.set_xy(10, 50); pdf.set_font("Arial", '', 10); pdf.cell(100, 5, "Spett.le:", 0, 1); pdf.set_font("Arial", 'B', 11); pdf.cell(100, 5, client_data['name'], 0, 1)
     pdf.set_font("Arial", '', 10); pdf.cell(100, 5, client_data['address'], 0, 1)
     if client_data.get('piva'): pdf.cell(100, 5, f"P.IVA: {client_data['piva']}", 0, 1)
     pdf.ln(10); pdf.set_font("Arial", 'B', 12); pdf.cell(0, 10, f"Oggetto: Fornitura Libreria {project_data['project_name']}", 0, 1); pdf.ln(2)
-    pdf.set_font("Arial", '', 10); desc = f"Libreria composta da {project_data['num_colonne']} moduli.\nFiniture: {project_data['finish_wood']} / {project_data['finish_iron']}."; pdf.multi_cell(0, 6, desc); pdf.ln(5)
+    pdf.set_font("Arial", '', 10); desc = f"Libreria composta da {project_data['num_colonne']} moduli.\nFiniture: {project_data['finish_wood']} / {project_data['finish_iron']}."; pdf.multi_cell(0, 6, desc); pdf.ln(10)
     
-    # DISEGNO NEL PREVENTIVO (SCALATO)
+    # DISEGNO GRANDE PAG 1
     pdf.set_font("Arial", 'B', 10); pdf.cell(0, 6, "Prospetto:", 0, 1)
-    y_after_draw = draw_frontal_schema(pdf, 15, pdf.get_y(), cols_data, 0.25) # Scala ridotta per preventivo
-    pdf.set_y(y_after_draw)
+    draw_frontal_schema(pdf, 15, pdf.get_y(), cols_data, 0.35, draw_quotes=True)
     
+    # PAG 2: PREZZI E CONDIZIONI
+    pdf.add_page()
     pdf.set_fill_color(240, 240, 240); pdf.cell(140, 8, "Descrizione", 1, 0, 'L', True); pdf.cell(40, 8, "Importo", 1, 1, 'R', True)
     pdf.cell(140, 10, "Struttura su misura (Materiali e Lavorazione)", 1, 0); pdf.cell(40, 10, f"E {totals['price_ex_vat'] - totals['logistics_price']:.2f}", 1, 1, 'R')
     if totals['logistics_price'] > 0:
