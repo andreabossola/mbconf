@@ -11,7 +11,7 @@ from datetime import datetime
 from fpdf import FPDF
 
 # --- 1. SETUP & LOGIN ---
-st.set_page_config(layout="wide", page_title="Moby v1.8")
+st.set_page_config(layout="wide", page_title="Moby v1.8.1 Visual Fix")
 
 def check_login():
     if "logged_in" not in st.session_state:
@@ -45,7 +45,7 @@ OFFSET_LATERALI = 3.0
 PESO_SPECIFICO_FERRO = 7.85 
 PESO_SPECIFICO_LEGNO = 0.70 
 
-VERSION = "v1.8"
+VERSION = "v1.8.1 Visual Fix"
 COPYRIGHT = "© Andrea Bossola 2025"
 stl_triangles = [] 
 
@@ -99,12 +99,13 @@ def generate_pdf_report(project_name, parts_list, wood_data, iron_data, stats, c
         if col['mh']:
             for z in col['mh']:
                 mz = z * scale
-                # Fix: Y della mensola calcolata per allineare il top
                 pdf.rect(current_x + 1, start_y + (150 - mz - (SPESSORE_LEGNO*scale)), w, (SPESSORE_LEGNO*scale), 'F') 
         current_x += w + 1
         pdf.set_fill_color(0, 0, 0) 
         pdf.rect(current_x, start_y + (150 - h), 1, h, 'F') 
-        current_x += 2 
+        
+        # FIX: RIMOSSO SPAZIO EXTRA (Ora sono attaccati)
+        current_x += 0.5 # Lascio mezzo millimetro grafico giusto per non farli fondere visivamente nel PDF
     
     pdf.set_y(start_y + 160) 
     
@@ -171,7 +172,7 @@ def generate_pdf_report(project_name, parts_list, wood_data, iron_data, stats, c
         pdf.set_fill_color(0, 0, 0) 
         for hx, hy in part['holes']:
             cx, cy = start_x + (hy * scale), cursor_y + (hx * scale)
-            pdf.ellipse(cx-0.5, cy-0.5, 1.0, 1.0, 'F') # Ellipse Fix
+            pdf.ellipse(cx-0.5, cy-0.5, 1.0, 1.0, 'F')
         pdf.set_xy(start_x, cursor_y - 6)
         pdf.set_font("Arial", 'B', 9)
         pdf.cell(0, 5, f"{part['lbl']} ({part['h']}x{part['w']} cm) - {len(part['holes'])} Fori")
@@ -277,18 +278,16 @@ def load_user_file(f):
         st.success("Caricato!")
     except Exception as e: st.error(f"Errore: {e}")
 
-# --- 7. SIDEBAR (NEW LAYOUT) ---
+# --- 7. SIDEBAR ---
 load_default_if_exists()
 
 with st.sidebar:
-    # HEADER
     try: st.image("logo.png", width=200) 
     except: st.markdown("## MOBY")
     st.markdown("### MOBY CONFIGURATOR")
     st.caption(COPYRIGHT)
     st.divider()
     
-    # COMANDI
     if 'project_name' not in st.session_state: st.session_state['project_name'] = "Progetto"
     st.text_input("Nome Progetto", key='project_name_input', value=st.session_state['project_name'])
     st.session_state['project_name'] = clean_filename(st.session_state['project_name_input'])
@@ -353,7 +352,7 @@ with st.sidebar:
             iron_stats_list.append({"Altezza": h, "Profondità": d})
             for _ in range(r): wood_list.append({"w": w, "d": d})
 
-    # --- VISUALIZZAZIONE 3D CALCOLO ---
+    # --- 3D PLOT ---
     fig = go.Figure()
     cx = 0 
     for dc in dati_colonne:
@@ -366,7 +365,7 @@ with st.sidebar:
         fig.add_trace(draw(cx, 0, 0, SPESSORE_FERRO, dc["d"], dc["h"], '#101010', f"Ferro DX {lbl}"))
         cx += SPESSORE_FERRO
 
-    # --- FOOTER EXPORT ---
+    # --- EXPORT FOOTER ---
     st.divider()
     st.header("SALVA / ESPORTA")
     
@@ -383,7 +382,6 @@ with st.sidebar:
     c1, c2 = st.columns(2)
     c1.download_button("💾 JSON", json.dumps(proj_data), fname_json, "application/json")
     c2.download_button("🧊 STL", get_bin_stl(stl_triangles), fname_stl, "application/octet-stream")
-    
     st.divider()
     st.caption(VERSION)
 
@@ -397,7 +395,6 @@ with tab1:
 with tab2:
     st.markdown(f"### Distinta Materiali - {prj}")
     
-    # STATS
     vol_ferro = sum([p['w'] * p['h'] * SPESSORE_FERRO for p in parts_list])
     peso_ferro = (vol_ferro * PESO_SPECIFICO_FERRO) / 1000.0
     vol_legno = sum([w['w'] * w['d'] * SPESSORE_LEGNO for w in wood_list])
@@ -443,7 +440,7 @@ with tab2:
         st.subheader("⛓️ Distinta Ferro")
         if not distinta_ferro_pdf.empty: st.dataframe(distinta_ferro_pdf, hide_index=True, use_container_width=True)
     
-    # --- ANTEPRIMA UNIFICATA ESECUTIVI ---
+    # --- ANTEPRIMA UNIFICATA ---
     st.divider()
     st.subheader("📦 Esecutivi Taglio (Anteprima Completa)")
     
@@ -453,39 +450,39 @@ with tab2:
     
     st.write("##")
     
-    # Costruzione Grafico Unico (Panorama)
+    # PLOTLY UNIFICATO E PULITO
     fig_all = go.Figure()
     cursor_y_plot = 0
-    gap_plot = 20 
+    gap_plot = 30 # Gap visivo nell'anteprima
     
     for idx, part in enumerate(parts_list):
         dim_x, dim_y = part['h'], part['w']
-        # Rettangolo
-        fig_all.add_shape(type="rect", x0=0, y0=cursor_y_plot, x1=dim_x, y1=cursor_y_plot+dim_y, line=dict(color="black", width=2))
-        # Buchi
-        x_holes = [hy for hx, hy in part['holes']] # hy è lunghezza
-        y_holes = [cursor_y_plot + hx for hx, hy in part['holes']] # hx è profondità
+        # Rettangolo (Bianco ghiaccio #E0E0E0)
+        fig_all.add_shape(type="rect", x0=0, y0=cursor_y_plot, x1=dim_x, y1=cursor_y_plot+dim_y, line=dict(color="#E0E0E0", width=2))
         
-        fig_all.add_trace(go.Scatter(x=x_holes, y=y_holes, mode='markers', marker=dict(color='blue', size=6), name=part['lbl'], hoverinfo='name'))
+        # Buchi (Ciano)
+        x_holes = [hy for hx, hy in part['holes']] 
+        y_holes = [cursor_y_plot + hx for hx, hy in part['holes']] 
+        fig_all.add_trace(go.Scatter(x=x_holes, y=y_holes, mode='markers', marker=dict(color='#00FFFF', size=6), hoverinfo='skip'))
         
-        # Testo Etichetta
-        fig_all.add_annotation(x=dim_x/2, y=cursor_y_plot + dim_y/2, text=part['lbl'], showarrow=False, font=dict(size=14, color="black"))
-        
+        # Testo
+        fig_all.add_annotation(x=dim_x/2, y=cursor_y_plot + dim_y/2, text=part['lbl'], showarrow=False, font=dict(size=14, color="white"))
         cursor_y_plot += dim_y + gap_plot
 
     fig_all.update_layout(
-        xaxis=dict(title="Lunghezza (cm)", showgrid=True, zeroline=False),
-        yaxis=dict(title="Pezzi in sequenza", showgrid=False, zeroline=False, showticklabels=False),
-        height=500, margin=dict(l=10, r=10, t=10, b=10),
-        dragmode="pan", 
-        showlegend=False
+        xaxis=dict(title="Lunghezza (cm)", showgrid=True, zeroline=False, gridcolor='#333'),
+        # FIX PROPORZIONI: scaleanchor="x", scaleratio=1
+        yaxis=dict(title="Pezzi", showgrid=False, zeroline=False, showticklabels=False, scaleanchor="x", scaleratio=1),
+        height=600, margin=dict(l=10, r=10, t=10, b=10),
+        dragmode="pan", showlegend=False,
+        plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)' # Sfondo Trasparente
     )
     
-    # Config per la toolbar pulita
+    # Toolbar pulita
     config_plot = {'displayModeBar': True, 'displaylogo': False, 'modeBarButtonsToRemove': ['select2d', 'lasso2d', 'autoScale2d']}
     st.plotly_chart(fig_all, width="stretch", config=config_plot)
 
-    # Tabella Download Singoli (Senza Grafici)
+    # Tabella Download Singoli
     with st.expander("📂 Scarica DXF Pezzi Singoli (Opzionale)"):
         for idx, part in enumerate(parts_list):
             c_name, c_down = st.columns([4, 1])
