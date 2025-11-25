@@ -11,7 +11,7 @@ from datetime import datetime
 from fpdf import FPDF
 
 # --- 1. SETUP & LOGIN ---
-st.set_page_config(layout="wide", page_title="Moby v1.6 PDF")
+st.set_page_config(layout="wide", page_title="Moby v1.6.1 PDF Fix")
 
 def check_login():
     if "logged_in" not in st.session_state:
@@ -45,7 +45,7 @@ OFFSET_LATERALI = 3.0
 PESO_SPECIFICO_FERRO = 7.85 
 PESO_SPECIFICO_LEGNO = 0.70 
 
-VERSION = "v1.6 PDF Edition"
+VERSION = "v1.6.1 PDF Fix"
 COPYRIGHT = "© Andrea Bossola 2025"
 stl_triangles = [] 
 
@@ -53,11 +53,16 @@ stl_triangles = []
 def get_timestamp_string(): return datetime.now().strftime("%Y%m%d_%H%M")
 def clean_filename(name): return "".join([c if c.isalnum() else "_" for c in name])
 
-# --- 3. PDF GENERATOR ENGINE ---
+# --- 3. PDF GENERATOR ENGINE (SAFE MODE) ---
 class PDFReport(FPDF):
     def header(self):
+        # PROVA A CARICARE IL LOGO, SE FALLISCE CONTINUA SENZA
         if os.path.exists("logo.png"):
-            self.image("logo.png", 10, 8, 33)
+            try:
+                self.image("logo.png", 10, 8, 33)
+            except Exception:
+                pass # Se il logo è 16-bit o corrotto, lo ignora
+                
         self.set_font('Arial', 'B', 15)
         self.cell(0, 10, 'SCHEDA TECNICA DI PRODUZIONE', 0, 1, 'R')
         self.ln(20)
@@ -98,11 +103,15 @@ def generate_pdf_report(project_name, parts_list, wood_data, stats):
     pdf.cell(40, 10, "Metri Totali", 1, 1)
     pdf.set_font("Arial", size=10)
     
-    for index, row in wood_data.iterrows():
-        pdf.cell(40, 10, f"{row['Larghezza']:.1f} cm", 1)
-        pdf.cell(40, 10, f"{row['Profondità']:.1f} cm", 1)
-        pdf.cell(40, 10, f"{row['Pezzi']} pz", 1)
-        pdf.cell(40, 10, f"{row['Metri Totali']:.1f} m", 1, 1)
+    if not wood_data.empty:
+        for index, row in wood_data.iterrows():
+            pdf.cell(40, 10, f"{row['Larghezza']:.1f} cm", 1)
+            pdf.cell(40, 10, f"{row['Profondità']:.1f} cm", 1)
+            pdf.cell(40, 10, f"{row['Pezzi']} pz", 1)
+            pdf.cell(40, 10, f"{row['Metri Totali']:.1f} m", 1, 1)
+    else:
+        pdf.cell(160, 10, "Nessuna mensola configurata", 1, 1, 'C')
+        
     pdf.ln(10)
     
     # DISEGNI TECNICI FERRO
@@ -111,39 +120,32 @@ def generate_pdf_report(project_name, parts_list, wood_data, stats):
     pdf.cell(0, 10, "SCHEDE TECNICHE FERRO (Fianchi)", 1, 1, 'L', fill=True)
     pdf.ln(5)
     
-    # Disegno vettoriale dei pezzi
-    scale = 0.5 # Fattore scala per far stare i pezzi nel foglio
+    scale = 0.5 
     cursor_y = pdf.get_y()
     
     for part in parts_list:
-        # Controlla se c'è spazio, sennò nuova pagina
         req_h = (part['w'] * scale) + 20
         if cursor_y + req_h > 270:
             pdf.add_page()
             cursor_y = 20
             
-        # Disegna Pezzo
         start_x = 20
         pdf.rect(start_x, cursor_y, part['h']*scale, part['w']*scale)
         
-        # Disegna Fori
         for hx, hy in part['holes']:
-            # hx (profondità) -> Y nel PDF, hy (lunghezza) -> X nel PDF
             cx = start_x + (hy * scale)
             cy = cursor_y + (hx * scale)
-            # Disegna cerchietto (raggio visuale fisso)
             pdf.circle(cx, cy, 1.0) 
             
-        # Etichetta
         pdf.set_xy(start_x, cursor_y - 5)
         pdf.set_font("Arial", 'B', 8)
         pdf.cell(0, 5, f"{part['lbl']} ({part['h']}x{part['w']} cm) - {len(part['holes'])} Fori")
         
-        cursor_y += req_h + 10 # Spazio tra i pezzi
+        cursor_y += req_h + 10 
 
-    return pdf.output(dest='S').encode('latin-1') # Ritorna bytes per download
+    return pdf.output(dest='S').encode('latin-1')
 
-# --- 4. DXF ENGINE (FIXED TEXT POSITION) ---
+# --- 4. DXF ENGINE ---
 def create_dxf_doc():
     doc = ezdxf.new()
     for name, col in [('TAGLIO',1), ('FORI',5), ('INFO',3)]:
@@ -151,34 +153,30 @@ def create_dxf_doc():
     return doc
 
 def draw_part_on_dxf(msp, part, offset_x, offset_y, project_name):
-    dim_x = part['h'] # Lunghezza
-    dim_y = part['w'] # Larghezza
+    dim_x = part['h'] 
+    dim_y = part['w'] 
     
-    # Rettangolo
     msp.add_lwpolyline([
         (offset_x, offset_y), (offset_x+dim_x, offset_y), 
         (offset_x+dim_x, offset_y+dim_y), (offset_x, offset_y+dim_y), 
         (offset_x, offset_y)], dxfattribs={'layer': 'TAGLIO'})
     
-    # Fori
     for hx, hy in part['holes']:
         cx, cy = offset_x + hy, offset_y + hx
         msp.add_circle((cx, cy), radius=DIAMETRO_FORO/2, dxfattribs={'layer': 'FORI'})
     
-    # INFO ESTERNE (Sopra il pezzo)
-    info_txt = f"{part['lbl']} | {project_name}"
+    date_str = datetime.now().strftime("%d/%m/%y")
+    info_txt = f"{part['lbl']} | {project_name} | {date_str}"
     t = msp.add_text(info_txt, dxfattribs={'layer': 'INFO', 'height': 2.5})
-    t.dxf.insert = (offset_x, offset_y + dim_y + 2) # 2cm sopra il bordo superiore
+    t.dxf.insert = (offset_x, offset_y + dim_y + 2) 
     
     return dim_x 
 
 def generate_single_dxf(part, project_name):
     doc = create_dxf_doc()
     msp = doc.modelspace()
-    # Intestazione Generale
     t = msp.add_text(f"PROGETTO: {project_name}", dxfattribs={'layer': 'INFO', 'height': 5.0})
-    t.dxf.insert = (0, 50) # Lontano in alto
-    
+    t.dxf.insert = (0, 50) 
     draw_part_on_dxf(msp, part, 0, 0, project_name)
     out = io.StringIO()
     doc.write(out)
@@ -187,14 +185,10 @@ def generate_single_dxf(part, project_name):
 def generate_full_dxf(parts, project_name):
     doc = create_dxf_doc()
     msp = doc.modelspace()
-    
-    # Cartiglio Generale
     date_str = datetime.now().strftime("%d/%m/%Y")
     t = msp.add_text(f"PROGETTO: {project_name} | DATA: {date_str}", dxfattribs={'layer': 'INFO', 'height': 8.0})
-    t.dxf.insert = (0, -20) # Sotto, o molto sopra. Mettiamolo a Y=-20
-    
-    cursor_y = 0
-    gap = 15 # Aumentato gap
+    t.dxf.insert = (0, -20) 
+    cursor_y, gap = 0, 15 
     for part in parts:
         draw_part_on_dxf(msp, part, 0, cursor_y, project_name)
         cursor_y += part['w'] + gap 
@@ -220,7 +214,7 @@ def get_bin_stl(tris):
     for p in tris: out.write(struct.pack('<ffffffffffffH', 0,0,0, *p[0], *p[1], *p[2], 0))
     return out.getvalue()
 
-# --- 6. LOADING & STATE ---
+# --- 6. LOADING ---
 def load_default_if_exists():
     if 'data_loaded' in st.session_state: return
     if os.path.exists("default.json"):
@@ -314,7 +308,6 @@ with st.sidebar:
             
             dati_colonne.append({"w":w, "h":h, "d":d, "r":r, "man":is_manual, "mh":z_shelves, "letter": module_letter})
 
-            # DATI PRODUZIONE
             holes_coords = []
             for z in z_shelves:
                 cy = z + (SPESSORE_LEGNO / 2.0) 
@@ -398,7 +391,7 @@ with tab2:
     c_info3.metric("Peso Legno", f"{stats['peso_legno']:.1f} kg")
     c_info4.metric("Viteria", f"{num_viti} pz")
     
-    # GENERAZIONE PDF
+    # GENERAZIONE PDF (SAFE)
     if st.button("📄 GENERA SCHEDA TECNICA PDF", type="primary", use_container_width=True):
         pdf_bytes = generate_pdf_report(prj, parts_list, distinta_legno_pdf, stats)
         st.download_button("📥 SCARICA PDF", pdf_bytes, fname_pdf, "application/pdf")
@@ -432,8 +425,8 @@ with tab2:
         fig_2d.update_layout(
             title=f"{part['lbl']} ({dim_x} x {dim_y} cm)",
             shapes=shapes, 
-            xaxis=dict(range=[-5, dim_x+5], showgrid=True, title="Lunghezza"), 
-            yaxis=dict(range=[-5, dim_y+5], scaleanchor="x", title="Larghezza"), 
+            xaxis=dict(range=[-5, dim_x+5], showgrid=True, title="L"), 
+            yaxis=dict(range=[-5, dim_y+5], scaleanchor="x", title="P"), 
             height=150, margin=dict(l=10, r=10, t=30, b=10)
         )
         
