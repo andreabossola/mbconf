@@ -45,7 +45,7 @@ OFFSET_LATERALI = 3.0
 PESO_SPECIFICO_FERRO = 7.85 
 PESO_SPECIFICO_LEGNO = 0.70 
 
-VERSION = "v24.4 FIXED"
+VERSION = "v24.5 (Labels & Logic Fixed)"
 COPYRIGHT = "© Andrea Bossola 2025"
 stl_triangles = [] 
 
@@ -53,12 +53,27 @@ stl_triangles = []
 def get_timestamp_string(): return datetime.now().strftime("%Y%m%d_%H%M")
 def clean_filename(name): return "".join([c if c.isalnum() else "_" for c in name])
 
-# --- 3. GESTIONE TEMPI & COSTI (DEFAULT) ---
+# --- 3. GESTIONE TEMPI & COSTI (AGGIORNATO CON NUOVE VOCI) ---
 DEFAULT_COSTS = {
     "costo_ferro_kg": 0.0, "costo_legno_mq": 0.0, "costo_ora_operaio": 0.0, "markup_totale": 2.5,
-    "gg_ordine_ferro": 1, "gg_arrivo_lastra": 5, "gg_verniciatura_ferro": 5, "gg_verniciatura_legno": 3, "gg_attesa_corriere": 2,
-    "min_taglio_legno_pezzo": 0.0, "min_colore_legno_metro": 0.0, "min_preassemblaggio_modulo": 0.0, "min_preassemblaggio_mensola": 0.0,
-    "ore_pulizia": 2.0, "ore_imballo_base": 1.0, "ore_imballo_extra": 2.0, "costo_imballo_materiale": 20.0, "ore_prep_spedizione": 2.0
+    
+    # Tempi Approvvigionamento
+    "gg_ordine_ferro": 1, "gg_arrivo_lastra": 5, 
+    "gg_ordine_legno": 2, # NUOVO
+    
+    # Tempi Verniciatura/Esterni
+    "gg_verniciatura_ferro": 5, "gg_verniciatura_legno": 3, "gg_attesa_corriere": 2,
+    
+    # Lavorazioni (Minuti)
+    "min_taglio_legno_pezzo": 0.0, 
+    "min_colore_legno_metro": 0.0, 
+    "min_preassemblaggio_modulo": 0.0, 
+    "min_preassemblaggio_mensola": 0.0,
+    "min_assemblaggio_finale_modulo": 30.0, # NUOVO
+    
+    # Logistica
+    "ore_pulizia": 2.0, "ore_imballo_base": 1.0, "ore_imballo_extra": 2.0, 
+    "costo_imballo_materiale": 20.0, "ore_prep_spedizione": 2.0
 }
 
 def load_costs_config():
@@ -73,7 +88,7 @@ def load_costs_config():
         else: st.session_state.costs_config = DEFAULT_COSTS.copy()
 load_costs_config()
 
-# --- 4. PDF ENGINE (TECNICO COMPLETO + COMMERCIALE) ---
+# --- 4. PDF ENGINE (INVARIATO) ---
 class PDFReport(FPDF):
     def __init__(self, project_name, colors):
         super().__init__()
@@ -123,7 +138,6 @@ class PDFReport(FPDF):
 
 def generate_pdf_report(project_name, parts_list, wood_data, iron_data, stats, cols_data, colors):
     pdf = PDFReport(project_name, colors)
-    
     # PAG 1: PROSPETTO
     pdf.add_page()
     pdf.set_fill_color(240, 240, 240) 
@@ -150,7 +164,6 @@ def generate_pdf_report(project_name, parts_list, wood_data, iron_data, stats, c
         pdf.set_fill_color(0, 0, 0) 
         pdf.rect(current_x, start_y + (120 - h), w_ferro_pdf, h, 'F') 
         current_x += w_ferro_pdf + 0.2 
-    
     # PAG 2: LOGISTICA
     pdf.add_page()
     pdf.set_fill_color(240, 240, 240)
@@ -181,8 +194,7 @@ def generate_pdf_report(project_name, parts_list, wood_data, iron_data, stats, c
             pdf.cell(40, 8, f"{row['Altezza']:.0f} x {row['Profondità']:.0f}", 1)
             pdf.cell(40, 8, f"{row['Pezzi']}", 1)
             pdf.ln()
-
-    # PAG 3: PIANTA (Recuperata)
+    # PAG 3: PIANTA
     pdf.add_page()
     pdf.set_fill_color(240, 240, 240)
     pdf.set_font("Arial", 'B', 11)
@@ -205,8 +217,7 @@ def generate_pdf_report(project_name, parts_list, wood_data, iron_data, stats, c
         pdf.cell(d_mod_scaled, 5, f"P: {col['d']:.0f}", 0, 0, 'C')
         pdf.draw_dimension_line_vert(start_x + d_mod_scaled + 5, current_y, current_y + w_mod_scaled, f"{col['w']:.0f}", 'L')
         current_y += w_mod_scaled 
-
-    # PAG 4+: DETTAGLI SINGOLI MODULI (Recuperati)
+    # PAG 4+: DETTAGLI
     scale_det = 0.45 
     for col in cols_data:
         pdf.add_page()
@@ -255,7 +266,6 @@ def generate_pdf_report(project_name, parts_list, wood_data, iron_data, stats, c
                 mid_y_quota = (y_curr + y_next) / 2
                 pdf.set_xy(line_x + 3, mid_y_quota - 2)
                 pdf.cell(10, 4, f"{dist:.1f}", 0, 0, 'L')
-        # Vista Laterale
         x_side = center_x + 40
         w_side = col['d'] * scale_det
         h_side = col['h'] * scale_det
@@ -273,8 +283,7 @@ def generate_pdf_report(project_name, parts_list, wood_data, iron_data, stats, c
         pdf.set_font("Arial", 'B', 8)
         pdf.cell(w_side, 5, "VISTA LATERALE", 0, 0, 'C')
         pdf.draw_dimension_line_horz(x_side, x_side + w_side, base_y + 5, f"P: {col['d']:.0f}")
-
-    # ULTIMA PAGINA: ESECUTIVI TAGLIO
+    # PAG ESECUTIVI
     pdf.add_page()
     pdf.set_fill_color(240, 240, 240)
     pdf.set_font("Arial", 'B', 11)
@@ -299,7 +308,6 @@ def generate_pdf_report(project_name, parts_list, wood_data, iron_data, stats, c
         pdf.set_font("Arial", 'B', 9)
         pdf.cell(0, 5, f"{part['lbl']} ({part['h']}x{part['w']} cm)", 0, 0)
         cursor_y += req_h 
-
     return pdf.output(dest='S').encode('latin-1')
 
 # --- 4.1 NUOVA FUNZIONE PDF COMMERCIALE (Separata) ---
@@ -360,24 +368,42 @@ def generate_commercial_pdf(project_data, totals, client_data):
     pdf.cell(0, 6, f"Data Consegna Stimata: {totals['delivery_date']}", 0, 1)
     return pdf.output(dest='S').encode('latin-1')
 
-# --- 5. LOGICA PREVENTIVATORE ---
+# --- 5. LOGICA PREVENTIVATORE (FIXED & EXPANDED) ---
 def calculate_quote_logic(stats, user_inputs):
     cfg = st.session_state.costs_config
+    
+    # 1. Materiali
     cost_ferro = stats['peso_ferro'] * cfg.get('costo_ferro_kg', 0)
     mq_legno = (stats['peso_legno'] / PESO_SPECIFICO_LEGNO / SPESSORE_LEGNO / 10.0) 
     cost_legno = mq_legno * cfg.get('costo_legno_mq', 0)
     cost_mat_tot = cost_ferro + cost_legno
+    
+    # 2. Tempi Paralleli
+    # Ferro
     days_iron = 0
     if not user_inputs['stock_iron']: days_iron += cfg.get('gg_ordine_ferro', 1) + cfg.get('gg_arrivo_lastra', 5)
     days_iron += cfg.get('gg_verniciatura_ferro', 5)
-    mins_legno = (stats['viti']/6 * cfg.get('min_taglio_legno_pezzo', 0)) + (mq_legno * cfg.get('min_colore_legno_metro', 0))
-    hrs_legno = mins_legno / 60.0
+    
+    # Legno
+    days_wood_supply = 0
+    if not user_inputs['stock_wood']: days_wood_supply = cfg.get('gg_ordine_legno', 2)
+    
+    mins_legno_lavorazione = (stats['viti']/6 * cfg.get('min_taglio_legno_pezzo', 0)) + (mq_legno * cfg.get('min_colore_legno_metro', 0))
+    hrs_legno = mins_legno_lavorazione / 60.0
     days_wood_work = hrs_legno / 8.0
-    days_wood = days_wood_work + cfg.get('gg_verniciatura_legno', 3)
+    days_wood = days_wood_supply + days_wood_work + cfg.get('gg_verniciatura_legno', 3)
+    
     days_production = max(days_iron, days_wood)
+    
+    # 3. Manodopera Produzione
     mins_pre = (user_inputs['num_cols'] * cfg.get('min_preassemblaggio_modulo', 0)) + (stats['viti']/6 * cfg.get('min_preassemblaggio_mensola', 0))
-    hrs_prod_tot = hrs_legno + (mins_pre / 60.0)
+    # Aggiunta Assemblaggio Finale
+    mins_final = user_inputs['num_cols'] * cfg.get('min_assemblaggio_finale_modulo', 0)
+    
+    hrs_prod_tot = hrs_legno + ((mins_pre + mins_final) / 60.0)
     cost_labor_prod = hrs_prod_tot * cfg.get('costo_ora_operaio', 0)
+    
+    # 4. Logistica
     log_cost = 0.0; log_days = 0; hrs_packing = cfg.get('ore_imballo_base', 1.0)
     if user_inputs['logistics_type'] == "corriere":
         hrs_packing += cfg.get('ore_imballo_extra', 2.0)
@@ -388,11 +414,14 @@ def calculate_quote_logic(stats, user_inputs):
         log_cost += tot_man_hrs * cfg.get('costo_ora_operaio', 0)
         log_days += 1
     cost_packing = (hrs_packing * cfg.get('costo_ora_operaio', 0)) + cfg.get('costo_imballo_materiale', 0)
+    
+    # 5. Totali
     cost_base = cost_mat_tot + cost_labor_prod + cost_packing
     base_markup = cost_base + log_cost
     price_ex_vat = base_markup * cfg.get('markup_totale', 2.5)
     vat = price_ex_vat * 0.22
     del_date = user_inputs['start_date'] + timedelta(days=int(days_production + log_days + 1))
+    
     return {
         "price_ex_vat": price_ex_vat, "vat": vat, "price_total": price_ex_vat + vat,
         "logistics_price": log_cost * cfg.get('markup_totale', 2.5), 
@@ -400,7 +429,7 @@ def calculate_quote_logic(stats, user_inputs):
         "days_total": int(days_production + log_days + 1)
     }
 
-# --- 6. DXF & STL ENGINE (TUE ORIGINALI) ---
+# --- 6. DXF & STL ENGINE (INVARIATO) ---
 def create_dxf_doc():
     doc = ezdxf.new()
     for name, col in [('TAGLIO',1), ('FORI',5), ('INFO',3)]: doc.layers.new(name=name, dxfattribs={'color': col})
@@ -454,7 +483,7 @@ def load_user_file(f):
     try: apply_json_data(json.load(f)); st.session_state.last_loaded_file = f.name; st.success("Caricato!")
     except Exception as e: st.error(f"Errore: {e}")
 
-# --- 7. SIDEBAR (TUA ORIGINALE) ---
+# --- 7. SIDEBAR (INVARIATO) ---
 load_default_if_exists()
 with st.sidebar:
     try: st.image("logo.png", width=200) 
@@ -578,7 +607,6 @@ with tab2:
         fig_all.add_trace(go.Scatter(x=x_holes, y=y_holes, mode='markers', marker=dict(color='#00FFFF', size=6), hoverinfo='skip'))
         fig_all.add_annotation(x=dim_x/2, y=cursor_y_plot + dim_y/2, text=part['lbl'], showarrow=False, font=dict(size=14, color="white"))
         cursor_y_plot += dim_y + gap_plot
-    # Qui applichiamo la correzione di scala
     fig_all.update_layout(xaxis=dict(title="Lunghezza (cm)", showgrid=True), yaxis=dict(showgrid=False, zeroline=False, showticklabels=False, scaleanchor="x", scaleratio=1), height=600, margin=dict(l=10, r=10, t=10, b=10), showlegend=False)
     st.plotly_chart(fig_all, width="stretch")
     
@@ -589,56 +617,67 @@ with tab2:
 
 with tab3:
     st.header("💰 Preventivatore & Tempi")
-    st.info("I dati inseriti qui aggiornano il calcolo finale. Salva la configurazione per il futuro.")
+    st.info("Compila i parametri per il calcolo. I risultati appaiono in fondo.")
     
-    col_setup1, col_setup2 = st.columns(2)
-    with col_setup1:
-        st.subheader("1. Tempistiche")
-        date_start = st.date_input("Data Conferma", datetime.now())
+    # 1. SETUP LOGISTICA E STOCK (AGGIORNATO)
+    c_set1, c_set2 = st.columns(2)
+    with c_set1:
+        st.subheader("1. Data & Magazzino")
+        date_start = st.date_input("Data Conferma Ordine", datetime.now())
         stock_iron = st.checkbox("Ferro disponibile in magazzino?", value=False)
-    with col_setup2:
-        st.subheader("2. Logistica")
-        log_type = st.radio("Metodo", ["Corriere", "Nostro Montaggio"])
+        stock_wood = st.checkbox("Legno disponibile in magazzino?", value=False) # NUOVO
+        
+    with c_set2:
+        st.subheader("2. Spedizione / Montaggio")
+        log_type = st.radio("Tipo Consegna", ["Corriere", "Nostro Montaggio"])
         costo_corriere = 0.0; gg_viaggio_corr = 0; ore_viaggio = 0.0; ore_montaggio = 0.0; num_op = 2
         if log_type == "Corriere":
-            costo_corriere = st.number_input("Costo Spedizione €", 0.0, 1000.0, 150.0)
-            gg_viaggio_corr = st.number_input("GG Viaggio", 1, 10, 2)
+            costo_corriere = st.number_input("Costo Spedizione (€)", 0.0, 2000.0, 150.0)
+            gg_viaggio_corr = st.number_input("Giorni Viaggio Corriere", 1, 15, 2)
         else:
             ore_viaggio = st.number_input("Ore Viaggio (A/R)", 0.0, 20.0, 2.0)
-            ore_montaggio = st.number_input("Ore Montaggio in loco", 0.0, 40.0, 4.0)
-            num_op = st.number_input("Num. Operai", 1, 4, 2)
+            ore_montaggio = st.number_input("Ore Montaggio in Loco", 0.0, 50.0, 4.0)
+            num_op = st.number_input("Numero Operai", 1, 5, 2)
 
     st.write("---")
     
-    with st.expander("🛠️ Costi Base e Ricarico", expanded=True):
+    # 2. INPUT COSTI (AGGIORNATI CON ETICHETTE CHIARE)
+    with st.expander("🛠️ Costi Materiali e Ricarico", expanded=True):
         c1, c2, c3, c4 = st.columns(4)
         st.session_state.costs_config['costo_ferro_kg'] = c1.number_input("Ferro (€/kg)", value=st.session_state.costs_config.get('costo_ferro_kg', 0.0))
         st.session_state.costs_config['costo_legno_mq'] = c2.number_input("Legno (€/mq)", value=st.session_state.costs_config.get('costo_legno_mq', 0.0))
         st.session_state.costs_config['costo_ora_operaio'] = c3.number_input("Operaio (€/h)", value=st.session_state.costs_config.get('costo_ora_operaio', 0.0))
-        st.session_state.costs_config['markup_totale'] = c4.number_input("Markup (X)", value=st.session_state.costs_config.get('markup_totale', 2.5), step=0.1)
+        st.session_state.costs_config['markup_totale'] = c4.number_input("Markup Vendita (X)", value=st.session_state.costs_config.get('markup_totale', 2.5), step=0.1)
 
     with st.expander("⏱️ Tempi Approvvigionamento (Giorni)", expanded=False):
         c1, c2, c3 = st.columns(3)
         st.session_state.costs_config['gg_ordine_ferro'] = c1.number_input("Ordine Ferro", value=st.session_state.costs_config.get('gg_ordine_ferro', 1))
         st.session_state.costs_config['gg_arrivo_lastra'] = c2.number_input("Arrivo Lastra", value=st.session_state.costs_config.get('gg_arrivo_lastra', 5))
-        st.session_state.costs_config['gg_verniciatura_ferro'] = c3.number_input("Verniciatura", value=st.session_state.costs_config.get('gg_verniciatura_ferro', 5))
+        st.session_state.costs_config['gg_ordine_legno'] = c3.number_input("Ordine Legno", value=st.session_state.costs_config.get('gg_ordine_legno', 2)) # NUOVO
 
     with st.expander("🔨 Tempi Lavorazione (Minuti)", expanded=False):
         c1, c2 = st.columns(2)
-        st.session_state.costs_config['min_taglio_legno_pezzo'] = c1.number_input("Taglio (pz)", value=st.session_state.costs_config.get('min_taglio_legno_pezzo', 5.0))
-        st.session_state.costs_config['min_colore_legno_metro'] = c2.number_input("Colore (m)", value=st.session_state.costs_config.get('min_colore_legno_metro', 15.0))
+        st.session_state.costs_config['min_taglio_legno_pezzo'] = c1.number_input("Taglio Legno (min/pezzo)", value=st.session_state.costs_config.get('min_taglio_legno_pezzo', 5.0))
+        st.session_state.costs_config['min_colore_legno_metro'] = c2.number_input("Colore Legno (min/metro)", value=st.session_state.costs_config.get('min_colore_legno_metro', 15.0))
+        
         c3, c4 = st.columns(2)
-        st.session_state.costs_config['min_preassemblaggio_modulo'] = c3.number_input("Pre-ass Modulo", value=st.session_state.costs_config.get('min_preassemblaggio_modulo', 30.0))
-        st.session_state.costs_config['min_preassemblaggio_mensola'] = c4.number_input("Pre-ass Mensola", value=st.session_state.costs_config.get('min_preassemblaggio_mensola', 5.0))
-
-    # CALCOLO LIVE
+        st.session_state.costs_config['min_preassemblaggio_modulo'] = c3.number_input("Pre-ass Modulo (min/modulo)", value=st.session_state.costs_config.get('min_preassemblaggio_modulo', 30.0))
+        st.session_state.costs_config['min_preassemblaggio_mensola'] = c4.number_input("Pre-ass Mensola (min/pezzo)", value=st.session_state.costs_config.get('min_preassemblaggio_mensola', 5.0))
+        
+        # NUOVO CAMPO ASSEMBLAGGIO FINALE
+        st.session_state.costs_config['min_assemblaggio_finale_modulo'] = st.number_input("Assemblaggio Finale (min/modulo)", value=st.session_state.costs_config.get('min_assemblaggio_finale_modulo', 30.0))
+    
+    # 3. CALCOLO E OUTPUT
     vol_ferro_c = sum([p['w']*p['h']*SPESSORE_FERRO for p in parts_list]); peso_ferro_c = (vol_ferro_c * PESO_SPECIFICO_FERRO) / 1000.0
     vol_legno_c = sum([w['w']*w['d']*SPESSORE_LEGNO for w in wood_list]); peso_legno_c = (vol_legno_c * PESO_SPECIFICO_LEGNO) / 1000.0
     num_viti_c = len(wood_list) * 6
     stats_calc = {"peso_ferro": peso_ferro_c, "peso_legno": peso_legno_c, "viti": num_viti_c}
     
     user_inputs = {
-        "start_date": date_start, "stock_iron": stock_iron, "logistics_type": log_type.lower().replace(" ", "_"),
+        "start_date": date_start, 
+        "stock_iron": stock_iron, 
+        "stock_wood": stock_wood, # NUOVO
+        "logistics_type": log_type.lower().replace(" ", "_"),
         "costo_corriere": costo_corriere, "gg_viaggio_corriere": gg_viaggio_corr,
         "ore_viaggio": ore_viaggio, "ore_montaggio": ore_montaggio, "num_operai": num_op, "num_cols": num_colonne
     }
@@ -647,10 +686,8 @@ with tab3:
     
     st.divider()
     m1, m2 = st.columns(2)
-    m1.metric("PREZZO TOTALE (IVATO)", f"€ {totals['price_total']:.2f}")
-    m2.success(f"Consegna prevista: {totals['delivery_date']} ({totals['days_total']} gg lav.)")
-    
-    st.write(f"Imponibile: € {totals['price_ex_vat']:.2f} + IVA: € {totals['vat']:.2f}")
+    m1.metric("PREZZO TOTALE IVATO", f"€ {totals['price_total']:.2f}", f"Imponibile: € {totals['price_ex_vat']:.2f}")
+    m2.success(f"Consegna Stimata: {totals['delivery_date']} ({totals['days_total']} gg lavorativi)")
     
     if st.button("📄 GENERA PREVENTIVO CLIENTE (PDF)", type="primary"):
         pdf_comm = generate_commercial_pdf(proj_data, totals, {"name": st.session_state['client_name'], "address": st.session_state['client_address']})
