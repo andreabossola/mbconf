@@ -8,9 +8,10 @@ import ezdxf
 import pandas as pd
 import os
 from datetime import datetime
+from fpdf import FPDF
 
 # --- 1. SETUP & LOGIN ---
-st.set_page_config(layout="wide", page_title="Moby v1.5 Default")
+st.set_page_config(layout="wide", page_title="Moby v1.6 PDF")
 
 def check_login():
     if "logged_in" not in st.session_state:
@@ -44,7 +45,7 @@ OFFSET_LATERALI = 3.0
 PESO_SPECIFICO_FERRO = 7.85 
 PESO_SPECIFICO_LEGNO = 0.70 
 
-VERSION = "v1.5 Default Load"
+VERSION = "v1.6 PDF Edition"
 COPYRIGHT = "© Andrea Bossola 2025"
 stl_triangles = [] 
 
@@ -52,50 +53,97 @@ stl_triangles = []
 def get_timestamp_string(): return datetime.now().strftime("%Y%m%d_%H%M")
 def clean_filename(name): return "".join([c if c.isalnum() else "_" for c in name])
 
-# --- 3. CARICAMENTO DEFAULT E JSON ---
-def apply_json_data(data):
-    """Applica i dati di un dizionario JSON allo stato"""
-    st.session_state['project_name'] = data.get('project_name', 'Progetto')
-    st.session_state['num_colonne'] = data.get('num_colonne', 2)
-    
-    for i, col in enumerate(data.get('cols', [])):
-        st.session_state[f"w_{i}"] = col.get('w', 60)
-        st.session_state[f"h_{i}"] = col.get('h', 200)
-        st.session_state[f"d_{i}"] = col.get('d', 30)
-        st.session_state[f"r_{i}"] = col.get('r', 4)
-        st.session_state[f"man_{i}"] = col.get('manual', False)
-        if 'man_heights' in col:
-            for j, val in enumerate(col['man_heights']):
-                st.session_state[f"h_shelf_{i}_{j}"] = val
+# --- 3. PDF GENERATOR ENGINE ---
+class PDFReport(FPDF):
+    def header(self):
+        if os.path.exists("logo.png"):
+            self.image("logo.png", 10, 8, 33)
+        self.set_font('Arial', 'B', 15)
+        self.cell(0, 10, 'SCHEDA TECNICA DI PRODUZIONE', 0, 1, 'R')
+        self.ln(20)
 
-def load_default_if_exists():
-    """Carica default.json all'avvio se non abbiamo già caricato qualcosa"""
-    if 'data_loaded' in st.session_state: return
-    
-    if os.path.exists("default.json"):
-        try:
-            with open("default.json", "r") as f:
-                data = json.load(f)
-                apply_json_data(data)
-                # st.toast("Configurazione Default Caricata") 
-        except:
-            pass # Se fallisce, usa i valori base
-    
-    st.session_state.data_loaded = True
+    def footer(self):
+        self.set_y(-15)
+        self.set_font('Arial', 'I', 8)
+        self.cell(0, 10, f'{COPYRIGHT} - Pagina ' + str(self.page_no()), 0, 0, 'C')
 
-def load_user_file(f):
-    """Gestisce l'upload manuale"""
-    if f is None: return
-    if 'last_loaded_file' in st.session_state and st.session_state.last_loaded_file == f.name: return
+def generate_pdf_report(project_name, parts_list, wood_data, stats):
+    pdf = PDFReport()
+    pdf.add_page()
+    pdf.set_font("Arial", size=12)
     
-    try:
-        data = json.load(f)
-        apply_json_data(data)
-        st.session_state.last_loaded_file = f.name
-        st.success(f"File '{f.name}' caricato!")
-    except Exception as e: st.error(f"Errore: {e}")
+    # INTESTAZIONE
+    pdf.set_font("Arial", 'B', 12)
+    pdf.cell(0, 10, f"Progetto: {project_name}", ln=True)
+    pdf.cell(0, 10, f"Data: {datetime.now().strftime('%d/%m/%Y %H:%M')}", ln=True)
+    pdf.ln(5)
+    
+    # RIEPILOGO DATI
+    pdf.set_fill_color(240, 240, 240)
+    pdf.cell(0, 10, "RIEPILOGO LOGISTICA", 1, 1, 'L', fill=True)
+    pdf.set_font("Arial", size=10)
+    pdf.cell(45, 10, f"Peso Ferro: {stats['peso_ferro']:.1f} kg", 1)
+    pdf.cell(45, 10, f"Peso Legno: {stats['peso_legno']:.1f} kg", 1)
+    pdf.cell(45, 10, f"Totale: {stats['peso_tot']:.1f} kg", 1)
+    pdf.cell(55, 10, f"Viteria: {stats['viti']} pz", 1, 1)
+    pdf.ln(10)
+    
+    # DISTINTA LEGNO
+    pdf.set_font("Arial", 'B', 12)
+    pdf.cell(0, 10, "DISTINTA LEGNO (Mensole)", 1, 1, 'L', fill=True)
+    pdf.set_font("Arial", 'B', 10)
+    pdf.cell(40, 10, "Larghezza", 1)
+    pdf.cell(40, 10, "Profondità", 1)
+    pdf.cell(40, 10, "Quantità", 1)
+    pdf.cell(40, 10, "Metri Totali", 1, 1)
+    pdf.set_font("Arial", size=10)
+    
+    for index, row in wood_data.iterrows():
+        pdf.cell(40, 10, f"{row['Larghezza']:.1f} cm", 1)
+        pdf.cell(40, 10, f"{row['Profondità']:.1f} cm", 1)
+        pdf.cell(40, 10, f"{row['Pezzi']} pz", 1)
+        pdf.cell(40, 10, f"{row['Metri Totali']:.1f} m", 1, 1)
+    pdf.ln(10)
+    
+    # DISEGNI TECNICI FERRO
+    pdf.add_page()
+    pdf.set_font("Arial", 'B', 12)
+    pdf.cell(0, 10, "SCHEDE TECNICHE FERRO (Fianchi)", 1, 1, 'L', fill=True)
+    pdf.ln(5)
+    
+    # Disegno vettoriale dei pezzi
+    scale = 0.5 # Fattore scala per far stare i pezzi nel foglio
+    cursor_y = pdf.get_y()
+    
+    for part in parts_list:
+        # Controlla se c'è spazio, sennò nuova pagina
+        req_h = (part['w'] * scale) + 20
+        if cursor_y + req_h > 270:
+            pdf.add_page()
+            cursor_y = 20
+            
+        # Disegna Pezzo
+        start_x = 20
+        pdf.rect(start_x, cursor_y, part['h']*scale, part['w']*scale)
+        
+        # Disegna Fori
+        for hx, hy in part['holes']:
+            # hx (profondità) -> Y nel PDF, hy (lunghezza) -> X nel PDF
+            cx = start_x + (hy * scale)
+            cy = cursor_y + (hx * scale)
+            # Disegna cerchietto (raggio visuale fisso)
+            pdf.circle(cx, cy, 1.0) 
+            
+        # Etichetta
+        pdf.set_xy(start_x, cursor_y - 5)
+        pdf.set_font("Arial", 'B', 8)
+        pdf.cell(0, 5, f"{part['lbl']} ({part['h']}x{part['w']} cm) - {len(part['holes'])} Fori")
+        
+        cursor_y += req_h + 10 # Spazio tra i pezzi
 
-# --- 4. DXF ENGINE ---
+    return pdf.output(dest='S').encode('latin-1') # Ritorna bytes per download
+
+# --- 4. DXF ENGINE (FIXED TEXT POSITION) ---
 def create_dxf_doc():
     doc = ezdxf.new()
     for name, col in [('TAGLIO',1), ('FORI',5), ('INFO',3)]:
@@ -117,25 +165,39 @@ def draw_part_on_dxf(msp, part, offset_x, offset_y, project_name):
         cx, cy = offset_x + hy, offset_y + hx
         msp.add_circle((cx, cy), radius=DIAMETRO_FORO/2, dxfattribs={'layer': 'FORI'})
     
-    # Info
-    date_str = datetime.now().strftime("%d/%m/%y")
-    t = msp.add_text(f"{part['lbl']} | {project_name} | {date_str}", dxfattribs={'layer': 'INFO', 'height': 2.5})
-    t.dxf.insert = (offset_x + 2, offset_y + 2)
+    # INFO ESTERNE (Sopra il pezzo)
+    info_txt = f"{part['lbl']} | {project_name}"
+    t = msp.add_text(info_txt, dxfattribs={'layer': 'INFO', 'height': 2.5})
+    t.dxf.insert = (offset_x, offset_y + dim_y + 2) # 2cm sopra il bordo superiore
+    
     return dim_x 
 
 def generate_single_dxf(part, project_name):
     doc = create_dxf_doc()
-    draw_part_on_dxf(doc.modelspace(), part, 0, 0, project_name)
+    msp = doc.modelspace()
+    # Intestazione Generale
+    t = msp.add_text(f"PROGETTO: {project_name}", dxfattribs={'layer': 'INFO', 'height': 5.0})
+    t.dxf.insert = (0, 50) # Lontano in alto
+    
+    draw_part_on_dxf(msp, part, 0, 0, project_name)
     out = io.StringIO()
     doc.write(out)
     return out.getvalue()
 
 def generate_full_dxf(parts, project_name):
     doc = create_dxf_doc()
-    cy, gap = 0, 10
+    msp = doc.modelspace()
+    
+    # Cartiglio Generale
+    date_str = datetime.now().strftime("%d/%m/%Y")
+    t = msp.add_text(f"PROGETTO: {project_name} | DATA: {date_str}", dxfattribs={'layer': 'INFO', 'height': 8.0})
+    t.dxf.insert = (0, -20) # Sotto, o molto sopra. Mettiamolo a Y=-20
+    
+    cursor_y = 0
+    gap = 15 # Aumentato gap
     for part in parts:
-        draw_part_on_dxf(doc.modelspace(), part, 0, cy, project_name)
-        cy += part['w'] + gap 
+        draw_part_on_dxf(msp, part, 0, cursor_y, project_name)
+        cursor_y += part['w'] + gap 
     out = io.StringIO()
     doc.write(out)
     return out.getvalue()
@@ -158,25 +220,54 @@ def get_bin_stl(tris):
     for p in tris: out.write(struct.pack('<ffffffffffffH', 0,0,0, *p[0], *p[1], *p[2], 0))
     return out.getvalue()
 
-# --- 6. INTERFACCIA ---
-# Inizializzazione (Carica default.json se c'è)
+# --- 6. LOADING & STATE ---
+def load_default_if_exists():
+    if 'data_loaded' in st.session_state: return
+    if os.path.exists("default.json"):
+        try:
+            with open("default.json", "r") as f:
+                data = json.load(f)
+                apply_json_data(data)
+        except: pass
+    st.session_state.data_loaded = True
+
+def apply_json_data(data):
+    st.session_state['project_name'] = data.get('project_name', 'Progetto')
+    st.session_state['num_colonne'] = data.get('num_colonne', 2)
+    for i, col in enumerate(data.get('cols', [])):
+        st.session_state[f"w_{i}"] = col.get('w', 60)
+        st.session_state[f"h_{i}"] = col.get('h', 200)
+        st.session_state[f"d_{i}"] = col.get('d', 30)
+        st.session_state[f"r_{i}"] = col.get('r', 4)
+        st.session_state[f"man_{i}"] = col.get('manual', False)
+        if 'man_heights' in col:
+            for j, val in enumerate(col['man_heights']):
+                st.session_state[f"h_shelf_{i}_{j}"] = val
+
+def load_user_file(f):
+    if f is None: return
+    if 'last_loaded_file' in st.session_state and st.session_state.last_loaded_file == f.name: return
+    try:
+        data = json.load(f)
+        apply_json_data(data)
+        st.session_state.last_loaded_file = f.name
+        st.success("Caricato!")
+    except Exception as e: st.error(f"Errore: {e}")
+
+# --- 7. INTERFACCIA ---
 load_default_if_exists()
 
 with st.sidebar:
     try: st.image("logo.png", width=200) 
     except: st.markdown("## MOBY")
     
-    # Input Nome Progetto
     if 'project_name' not in st.session_state: st.session_state['project_name'] = "Progetto"
     st.text_input("Nome Progetto", key='project_name_input', value=st.session_state['project_name'])
     st.session_state['project_name'] = clean_filename(st.session_state['project_name_input'])
-    
     st.divider()
     
-    # Upload File
     f = st.file_uploader("Carica JSON", type=["json"])
     if f: load_user_file(f)
-    
     st.divider()
     st.header("📐 Moduli")
     
@@ -187,14 +278,10 @@ with st.sidebar:
     parts_list = [] 
     wood_list = []  
 
-    # LOGICA SEMPLICE: 0..N (Nessuno spostamento)
     for i in range(num_colonne):
-        module_letter = chr(65 + i) # A, B, C
-        
+        module_letter = chr(65 + i)
         with st.expander(f"Modulo {module_letter}", expanded=False):
             c1, c2 = st.columns(2)
-            
-            # Recupero valori (o default hardcoded se non ci sono nemmeno nel JSON)
             def_w = st.session_state.get(f"w_{i}", 60)
             def_h = st.session_state.get(f"h_{i}", 200)
             def_d = st.session_state.get(f"d_{i}", 30)
@@ -210,7 +297,6 @@ with st.sidebar:
             is_manual = st.checkbox("Libera", value=def_man, key=f"man_{i}")
             mh = []
             z_shelves = []
-            
             if is_manual:
                 step = (h - SPESSORE_LEGNO)/(r-1) if r>1 else 0
                 for k in range(r):
@@ -238,13 +324,12 @@ with st.sidebar:
             
             parts_list.append({"w": d, "h": h, "lbl": f"Mod_{module_letter}_SX", "holes": holes_coords})
             parts_list.append({"w": d, "h": h, "lbl": f"Mod_{module_letter}_DX", "holes": holes_coords})
-            
             for _ in range(r): wood_list.append({"w": w, "d": d})
 
     st.markdown("---")
     st.caption(f"{COPYRIGHT} | {VERSION}")
 
-# --- 7. SCENA 3D ---
+# --- 8. VISUALIZZAZIONE ---
 fig = go.Figure()
 cx = 0 
 C_WOOD, C_IRON = '#D2B48C', '#101010'
@@ -264,6 +349,7 @@ prj = st.session_state['project_name']
 fname_json = f"{prj}_{ts}.json"
 fname_stl = f"{prj}_{ts}.stl"
 fname_dxf_full = f"{prj}_{ts}_Tutto.dxf"
+fname_pdf = f"{prj}_{ts}_SchedaTecnica.pdf"
 
 cols_to_save = []
 for dc in dati_colonne:
@@ -275,7 +361,7 @@ with st.sidebar:
     c1.download_button("💾 JSON", json.dumps(proj_data), fname_json, "application/json")
     c2.download_button("🧊 STL", get_bin_stl(stl_triangles), fname_stl, "application/octet-stream")
 
-# --- 8. TABS ---
+# --- 9. TABS PRODUZIONE ---
 tab1, tab2 = st.tabs(["🎥 3D Config", "🏭 ESECUTIVI PRODUZIONE"])
 
 with tab1:
@@ -291,18 +377,31 @@ with tab2:
     peso_legno = (vol_legno * PESO_SPECIFICO_LEGNO) / 1000.0
     num_viti = len(wood_list) * 6
     
+    stats = {
+        "peso_ferro": peso_ferro,
+        "peso_legno": peso_legno,
+        "peso_tot": peso_ferro + peso_legno,
+        "viti": num_viti
+    }
+    
     df_legno = pd.DataFrame(wood_list)
+    distinta_legno_pdf = pd.DataFrame()
     if not df_legno.empty:
         df_legno['Quantità'] = 1
-        distinta_legno = df_legno.groupby(['w', 'd']).count().reset_index()
-        distinta_legno['Metri Totali'] = (distinta_legno['w'] * distinta_legno['Quantità']) / 100.0
-        distinta_legno.columns = ['Larghezza', 'Profondità', 'Pezzi', 'Metri Totali']
+        distinta_legno_pdf = df_legno.groupby(['w', 'd']).count().reset_index()
+        distinta_legno_pdf['Metri Totali'] = (distinta_legno_pdf['w'] * distinta_legno_pdf['Quantità']) / 100.0
+        distinta_legno_pdf.columns = ['Larghezza', 'Profondità', 'Pezzi', 'Metri Totali']
     
     c_info1, c_info2, c_info3, c_info4 = st.columns(4)
-    c_info1.metric("Peso Totale", f"{peso_ferro + peso_legno:.1f} kg")
-    c_info2.metric("Peso Ferro", f"{peso_ferro:.1f} kg")
-    c_info3.metric("Peso Legno", f"{peso_legno:.1f} kg")
+    c_info1.metric("Peso Totale", f"{stats['peso_tot']:.1f} kg")
+    c_info2.metric("Peso Ferro", f"{stats['peso_ferro']:.1f} kg")
+    c_info3.metric("Peso Legno", f"{stats['peso_legno']:.1f} kg")
     c_info4.metric("Viteria", f"{num_viti} pz")
+    
+    # GENERAZIONE PDF
+    if st.button("📄 GENERA SCHEDA TECNICA PDF", type="primary", use_container_width=True):
+        pdf_bytes = generate_pdf_report(prj, parts_list, distinta_legno_pdf, stats)
+        st.download_button("📥 SCARICA PDF", pdf_bytes, fname_pdf, "application/pdf")
     
     st.divider()
     
@@ -310,21 +409,20 @@ with tab2:
     with c_sx:
         st.subheader("🌲 Distinta Legno")
         if not df_legno.empty:
-            st.dataframe(distinta_legno, hide_index=True, use_container_width=True)
+            st.dataframe(distinta_legno_pdf, hide_index=True, use_container_width=True)
         else: st.info("Nessuna mensola.")
             
     with c_dx:
         st.subheader("⛓️ Distinta Ferro")
         st.markdown(f"**Totale Pezzi:** {len(parts_list)}")
         dxf_full = generate_full_dxf(parts_list, prj)
-        st.download_button("📦 SCARICA DXF UNICO", dxf_full, fname_dxf_full, "application/dxf", type="primary", use_container_width=True)
+        st.download_button("📦 SCARICA DXF UNICO", dxf_full, fname_dxf_full, "application/dxf", use_container_width=True)
 
     st.divider()
     st.subheader("📄 Dettaglio Pezzi (DXF Singoli)")
     
     for idx, part in enumerate(parts_list):
-        dim_x = part['h']
-        dim_y = part['w']
+        dim_x, dim_y = part['h'], part['w']
         shapes = [dict(type="rect", x0=0, y0=0, x1=dim_x, y1=dim_y, line=dict(color="black"), fillcolor="rgba(0,0,0,0.05)")]
         for hx, hy in part['holes']:
             cx, cy = hy, hx
@@ -334,8 +432,8 @@ with tab2:
         fig_2d.update_layout(
             title=f"{part['lbl']} ({dim_x} x {dim_y} cm)",
             shapes=shapes, 
-            xaxis=dict(range=[-5, dim_x+5], showgrid=True, title="L"), 
-            yaxis=dict(range=[-5, dim_y+5], scaleanchor="x", title="P"), 
+            xaxis=dict(range=[-5, dim_x+5], showgrid=True, title="Lunghezza"), 
+            yaxis=dict(range=[-5, dim_y+5], scaleanchor="x", title="Larghezza"), 
             height=150, margin=dict(l=10, r=10, t=30, b=10)
         )
         
