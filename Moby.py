@@ -54,7 +54,7 @@ VONTREE_DATA = {
     "email": "info@vontree.it"
 }
 
-VERSION = "v25.4 Restored Layout"
+VERSION = "v25.5 Math Fix"
 COPYRIGHT = "© Andrea Bossola 2025"
 stl_triangles = [] 
 
@@ -139,7 +139,7 @@ class PDFReport(FPDF):
         self.set_draw_color(0,0,0); self.line(x_start, y, x_end, y); self.line(x_start, y-1, x_start, y+1); self.line(x_end, y-1, x_end, y+1)
         self.set_xy(x_start, y - 4); self.set_font("Arial", '', 8); self.cell(x_end - x_start, 4, text, 0, 0, 'C')
 
-# --- DISEGNO PROSPETTO ---
+# --- DISEGNO PROSPETTO (CON MATEMATICA INTERASSE CORRETTA) ---
 def draw_frontal_schema(pdf, start_x, start_y, cols_data, scale, draw_quotes=True):
     current_x = start_x; tot_width = 0; w_ferro_pdf = 0.3
     max_h = max([c['h'] for c in cols_data]); floor_y = start_y + (max_h * scale) + 10
@@ -147,17 +147,25 @@ def draw_frontal_schema(pdf, start_x, start_y, cols_data, scale, draw_quotes=Tru
     for col in cols_data:
         h = col['h'] * scale; w = col['w'] * scale
         pdf.set_fill_color(0, 0, 0); pdf.rect(current_x, floor_y - h, w_ferro_pdf, h, 'F')
-        raw_levels = [0.0] + sorted(col['mh']) + [col['h']]
+        
+        # Calcolo Centri Fori per le quote
+        hole_centers = [SPESSORE_LEGNO/2.0] # Fondo
+        for z in sorted(col['mh']): hole_centers.append(z + SPESSORE_LEGNO/2.0)
+        hole_centers.append(col['h'] - SPESSORE_LEGNO/2.0) # Cima
+        
         pdf.set_fill_color(220, 220, 220)
         for z in col['mh']: mz = z * scale; pdf.rect(current_x + w_ferro_pdf, floor_y - mz - (SPESSORE_LEGNO*scale), w, (SPESSORE_LEGNO*scale), 'F')
+        
         if draw_quotes:
             pdf.set_text_color(0,0,0); pdf.set_font("Arial", '', 7)
-            for i in range(len(raw_levels) - 1):
-                val_bot = raw_levels[i]; val_top = raw_levels[i+1]; dist = val_top - val_bot
-                if i < len(raw_levels) - 1: dist -= SPESSORE_LEGNO
+            for i in range(len(hole_centers) - 1):
+                h1 = hole_centers[i]; h2 = hole_centers[i+1]
+                dist = h2 - h1 # Distanza centro-centro
                 if dist > 3.0:
-                    y_bot_px = floor_y - (val_bot * scale); y_top_px = floor_y - (val_top * scale); mid_y = (y_bot_px + y_top_px) / 2
+                    y1 = floor_y - (h1 * scale); y2 = floor_y - (h2 * scale)
+                    mid_y = (y1 + y2) / 2
                     pdf.set_xy(current_x + w_ferro_pdf, mid_y - 2); pdf.cell(w, 4, f"{dist:.1f}", 0, 0, 'C')
+                    
         current_x += w + w_ferro_pdf
         pdf.set_fill_color(0, 0, 0); pdf.rect(current_x, floor_y - h, w_ferro_pdf, h, 'F')
         pdf.set_xy(current_x - w/2 - w_ferro_pdf, floor_y + 2); pdf.set_font("Arial", 'B', 8); pdf.cell(10, 5, f"Mod.{col['letter']}", 0, 0, 'C')
@@ -182,9 +190,9 @@ def generate_pdf_report(project_name, parts_list, wood_data, iron_data, stats, c
     if not iron_data.empty:
         for index, row in iron_data.iterrows(): pdf.cell(40, 8, f"{row['Altezza']:.0f} x {row['Profondità']:.0f}", 1); pdf.cell(40, 8, f"{row['Pezzi']}", 1); pdf.ln()
         
-    # PAG 3: PROSPETTO QUOTATO
+    # PAG 3: PROSPETTO QUOTATO (Interasse)
     pdf.add_page(); pdf.set_fill_color(240, 240, 240); pdf.set_font("Arial", 'B', 11); pdf.cell(0, 8, "PROSPETTO QUOTATO (INTERASSE FORI)", 0, 1, 'L', fill=True)
-    pdf.set_font("Arial", 'I', 8); pdf.cell(0, 6, "* Le quote interne indicano la luce netta (o interasse) tra le mensole.", 0, 1, 'L'); pdf.ln(10)
+    pdf.set_font("Arial", 'I', 8); pdf.cell(0, 6, "* Le quote interne indicano l'interasse (distanza centro-centro) dei fori.", 0, 1, 'L'); pdf.ln(10)
     draw_frontal_schema(pdf, 20, pdf.get_y(), cols_data, 0.35, draw_quotes=True)
     
     # PAG 4: PIANTA
@@ -197,71 +205,58 @@ def generate_pdf_report(project_name, parts_list, wood_data, iron_data, stats, c
         pdf.set_xy(start_x, current_y - 5); pdf.set_font("Arial", '', 8); pdf.cell(d_mod_scaled, 5, f"P: {col['d']:.0f}", 0, 0, 'C')
         pdf.draw_dimension_line_vert(start_x + d_mod_scaled + 5, current_y, current_y + w_mod_scaled, f"{col['w']:.0f}", 'L'); current_y += w_mod_scaled 
     
-    # PAG 5+: DETTAGLI (LAYOUT RESTAURATO)
+    # PAG 5+: DETTAGLI (LAYOUT CORRETTO: 1 LINEA SOVRAPPOSTA)
     scale_det = 0.45 
     for col in cols_data:
         pdf.add_page(); pdf.set_fill_color(240, 240, 240); pdf.set_font("Arial", 'B', 11); pdf.cell(0, 8, f"DETTAGLIO MODULO {col['letter']}", 0, 1, 'L', fill=True)
         pdf.set_font("Arial", '', 10); pdf.cell(0, 8, f"Dimensioni: {col['w']} (L) x {col['h']} (H) x {col['d']} (P) cm | {col['r']} Mensole", 0, 1, 'L'); pdf.ln(5)
         
-        # Setup Coordinate
-        h_front = col['h'] * scale_det
-        base_y = (297 / 2) + (h_front / 2) 
-        center_x = 105 
-        w_front = col['w'] * scale_det
-        x_front = center_x - w_front - 20 # Sinistra
-        w_ferro_det = 0.5 
+        h_front = col['h'] * scale_det; base_y = (297 / 2) + (h_front / 2); center_x = 105 
+        w_front = col['w'] * scale_det; x_front = center_x - w_front - 20; w_ferro_det = 0.5 
 
-        # 1. VISTA FRONTALE (Sinistra)
+        # 1. VISTA FRONTALE
         pdf.set_xy(x_front, base_y - h_front - 8); pdf.set_font("Arial", 'B', 9); pdf.cell(w_front + 1, 5, "VISTA FRONTALE", 0, 0, 'C')
         pdf.set_fill_color(0,0,0); pdf.rect(x_front, base_y - h_front, w_ferro_det, h_front, 'F'); pdf.rect(x_front + w_front + w_ferro_det, base_y - h_front, w_ferro_det, h_front, 'F')
         if col['mh']:
             for z in col['mh']: mz = z * scale_det; pdf.set_fill_color(180,180,180); pdf.rect(x_front + w_ferro_det, base_y - mz - (SPESSORE_LEGNO*scale_det), w_front, (SPESSORE_LEGNO*scale_det), 'F')
         pdf.draw_dimension_line_horz(x_front, x_front + w_front + (w_ferro_det*2), base_y + 5, f"L: {col['w']:.0f}")
 
-        # 2. SISTEMA DI QUOTE CENTRALE (Tra le due viste)
+        # 2. QUOTE CENTRALI (SINGLE LINE)
         line_x = center_x
-        line_top = base_y - h_front
-        line_bot = base_y
-        pdf.line(line_x, line_top, line_x, line_bot) # Linea verticale
+        hole_centers = [SPESSORE_LEGNO/2.0] + [z + SPESSORE_LEGNO/2.0 for z in sorted(col['mh'])] + [col['h'] - SPESSORE_LEGNO/2.0]
         
-        # Tacche e quote livelli
-        z_vals_sorted = sorted(col['mh'])
-        points = [0.0] + z_vals_sorted + [col['h']]
+        # Disegno unica linea dal primo all'ultimo foro
+        y_first_hole = base_y - (hole_centers[0]*scale_det)
+        y_last_hole = base_y - (hole_centers[-1]*scale_det)
+        pdf.line(line_x, y_first_hole, line_x, y_last_hole)
         
-        for i in range(len(points)-1):
-            val_bot = points[i]; val_top = points[i+1]; dist = val_top - val_bot
-            if i < len(points)-1: dist -= SPESSORE_LEGNO
+        for i in range(len(hole_centers)):
+            hc = hole_centers[i]
+            yc = base_y - (hc * scale_det)
+            pdf.line(line_x - 1, yc, line_x + 1, yc) # Tacca foro
             
-            y_curr = base_y - (val_bot * scale_det)
-            y_next = base_y - (val_top * scale_det)
-            
-            # Tacche orizzontali sulla linea centrale
-            pdf.line(line_x - 1, y_curr, line_x + 1, y_curr)
-            pdf.line(line_x - 1, y_next, line_x + 1, y_next)
-            
-            if dist > 3: 
-                mid_y = (y_curr + y_next) / 2
-                pdf.set_xy(line_x + 3, mid_y - 2); pdf.set_font("Arial", '', 8); pdf.cell(10, 4, f"{dist:.1f}", 0, 0, 'L')
-                
-        # Quota Totale H
-        pdf.draw_dimension_line_vert(line_x - 5, line_top, line_bot, f"H Tot: {col['h']:.1f}", 'R')
+            if i < len(hole_centers) - 1:
+                h_next = hole_centers[i+1]
+                dist = h_next - hc
+                y_next = base_y - (h_next * scale_det)
+                mid = (yc + y_next) / 2
+                # Scrittura quota a DESTRA
+                pdf.set_xy(line_x + 2, mid - 2); pdf.set_font("Arial", '', 8); pdf.cell(10, 4, f"{dist:.1f}", 0, 0, 'L')
 
-        # 3. VISTA LATERALE (Destra)
-        x_side = center_x + 40
-        w_side = col['d'] * scale_det
-        h_side = col['h'] * scale_det
+        # Scrittura H Totale a SINISTRA (della stessa linea)
+        mid_tot = (y_first_hole + y_last_hole) / 2
+        pdf.set_xy(line_x - 25, mid_tot - 2); pdf.cell(20, 4, f"H Tot: {col['h']:.1f}", 0, 0, 'R')
+
+        # 3. VISTA LATERALE
+        x_side = center_x + 40; w_side = col['d'] * scale_det; h_side = col['h'] * scale_det
         pdf.set_xy(x_side, base_y - h_side - 8); pdf.set_font("Arial", 'B', 9); pdf.cell(w_side, 5, "VISTA LATERALE", 0, 0, 'C')
         pdf.set_fill_color(255,255,255); pdf.set_draw_color(0,0,0); pdf.rect(x_side, base_y - h_side, w_side, h_side)
-        
-        # Fori laterali
         pdf.set_fill_color(0,0,0)
         holes_x = [OFFSET_LATERALI, col['d']/2, col['d']-OFFSET_LATERALI]
         for z in col['mh']:
-            y_hole = base_y - (z * scale_det) - (SPESSORE_LEGNO*scale_det)/2 # Centro mensola
+            y_hole = base_y - (z * scale_det) - (SPESSORE_LEGNO*scale_det)/2 
             for hx in holes_x:
-                x_hole = x_side + (hx * scale_det)
-                pdf.ellipse(x_hole-0.8, y_hole-0.8, 1.6, 1.6, 'F')
-                
+                x_hole = x_side + (hx * scale_det); pdf.ellipse(x_hole-0.8, y_hole-0.8, 1.6, 1.6, 'F')
         pdf.draw_dimension_line_horz(x_side, x_side + w_side, base_y + 5, f"P: {col['d']:.0f}")
 
     pdf.add_page(); pdf.set_fill_color(240, 240, 240); pdf.set_font("Arial", 'B', 11); pdf.cell(0, 8, "ESECUTIVI TAGLIO (FERRO)", 0, 1, 'L', fill=True); pdf.ln(10); scale_cut = 0.5; cursor_y = pdf.get_y() + 10
@@ -276,7 +271,6 @@ def generate_pdf_report(project_name, parts_list, wood_data, iron_data, stats, c
 
 def generate_commercial_pdf(project_data, totals, client_data, payment_info, notes, cols_data):
     pdf = PDFReport(project_data['project_name'], {}, is_commercial=True)
-    # PAG 1: Intestazione e Disegno
     pdf.add_page()
     pdf.set_xy(10, 50); pdf.set_font("Arial", '', 10); pdf.cell(100, 5, "Spett.le:", 0, 1); pdf.set_font("Arial", 'B', 11); pdf.cell(100, 5, client_data['name'], 0, 1)
     pdf.set_font("Arial", '', 10); pdf.cell(100, 5, client_data['address'], 0, 1)
@@ -286,7 +280,6 @@ def generate_commercial_pdf(project_data, totals, client_data, payment_info, not
     pdf.set_font("Arial", 'B', 10); pdf.cell(0, 6, "Prospetto:", 0, 1)
     draw_frontal_schema(pdf, 15, pdf.get_y(), cols_data, 0.35, draw_quotes=True)
     
-    # PAG 2: PREZZI E CONDIZIONI
     pdf.add_page()
     pdf.set_fill_color(240, 240, 240); pdf.cell(140, 8, "Descrizione", 1, 0, 'L', True); pdf.cell(40, 8, "Importo", 1, 1, 'R', True)
     pdf.cell(140, 10, "Struttura su misura (Materiali e Lavorazione)", 1, 0); pdf.cell(40, 10, f"E {totals['price_ex_vat'] - totals['logistics_price']:.2f}", 1, 1, 'R')
