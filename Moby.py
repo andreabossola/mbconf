@@ -7,6 +7,7 @@ import json
 import ezdxf 
 import pandas as pd
 import os
+import base64
 from datetime import datetime, timedelta
 from fpdf import FPDF
 
@@ -54,7 +55,7 @@ VONTREE_DATA = {
     "email": "info@vontree.it"
 }
 
-VERSION = "v25.6 Perfect Center"
+VERSION = "v26.0 Documentation Ready"
 COPYRIGHT = "© Andrea Bossola 2025"
 stl_triangles = [] 
 
@@ -62,7 +63,7 @@ stl_triangles = []
 def get_timestamp_string(): return datetime.now().strftime("%Y%m%d_%H%M")
 def clean_filename(name): return "".join([c if c.isalnum() else "_" for c in name])
 
-# --- 3. DATI ---
+# --- 3. DATI (COSTI & PAGAMENTI) ---
 DEFAULT_COSTS = {
     "costo_ferro_kg": 0.0, "costo_legno_mq": 0.0, "costo_ora_operaio": 0.0, 
     "markup_percent": 30.0,
@@ -148,11 +149,7 @@ def draw_frontal_schema(pdf, start_x, start_y, cols_data, scale, draw_quotes=Tru
         h = col['h'] * scale; w = col['w'] * scale
         pdf.set_fill_color(0, 0, 0); pdf.rect(current_x, floor_y - h, w_ferro_pdf, h, 'F')
         
-        # Centri fori per quote
         hole_centers = [SPESSORE_LEGNO/2.0] + sorted(col['mh']) + [col['h'] - SPESSORE_LEGNO/2.0]
-        # Aggiustamento livelli mensole per il disegno (base mensola)
-        # Ma per i centri fori uso hole_centers
-        
         pdf.set_fill_color(220, 220, 220)
         for z in col['mh']: mz = z * scale; pdf.rect(current_x + w_ferro_pdf, floor_y - mz - (SPESSORE_LEGNO*scale), w, (SPESSORE_LEGNO*scale), 'F')
         
@@ -175,12 +172,10 @@ def draw_frontal_schema(pdf, start_x, start_y, cols_data, scale, draw_quotes=Tru
 
 def generate_pdf_report(project_name, parts_list, wood_data, iron_data, stats, cols_data, colors):
     pdf = PDFReport(project_name, colors, is_commercial=False)
-    
-    # PAG 1: MUTO
+    # PAG 1
     pdf.add_page(); pdf.set_fill_color(240, 240, 240); pdf.set_text_color(0, 0, 0); pdf.set_font("Arial", 'B', 11); pdf.cell(0, 8, "PROSPETTO FRONTALE (MUTO)", 0, 1, 'L', fill=True); pdf.ln(10)
     draw_frontal_schema(pdf, 20, pdf.get_y(), cols_data, 0.35, draw_quotes=False)
-    
-    # PAG 2: DATI
+    # PAG 2
     pdf.add_page(); pdf.set_fill_color(240, 240, 240); pdf.set_font("Arial", 'B', 11); pdf.cell(0, 8, "RIEPILOGO MATERIALI", 0, 1, 'L', fill=True); pdf.ln(2); pdf.set_font("Arial", size=10)
     pdf.cell(45, 8, f"Peso Ferro: {stats['peso_ferro']:.1f} kg", 1); pdf.cell(45, 8, f"Peso Legno: {stats['peso_legno']:.1f} kg", 1); pdf.cell(45, 8, f"Totale: {stats['peso_tot']:.1f} kg", 1); pdf.cell(55, 8, f"Viteria: {stats['viti']} pz", 1, 1); pdf.ln(10)
     pdf.set_font("Arial", 'B', 11); pdf.cell(0, 8, "DISTINTA LEGNO", 0, 1, 'L', fill=True); pdf.ln(2); pdf.set_font("Arial", 'B', 9)
@@ -189,13 +184,11 @@ def generate_pdf_report(project_name, parts_list, wood_data, iron_data, stats, c
     pdf.ln(10); pdf.set_font("Arial", 'B', 11); pdf.cell(0, 8, "DISTINTA FERRO", 0, 1, 'L', fill=True); pdf.ln(2)
     if not iron_data.empty:
         for index, row in iron_data.iterrows(): pdf.cell(40, 8, f"{row['Altezza']:.0f} x {row['Profondità']:.0f}", 1); pdf.cell(40, 8, f"{row['Pezzi']}", 1); pdf.ln()
-        
-    # PAG 3: QUOTATO
+    # PAG 3
     pdf.add_page(); pdf.set_fill_color(240, 240, 240); pdf.set_font("Arial", 'B', 11); pdf.cell(0, 8, "PROSPETTO QUOTATO (INTERASSE FORI)", 0, 1, 'L', fill=True)
     pdf.set_font("Arial", 'I', 8); pdf.cell(0, 6, "* Le quote interne indicano l'interasse (distanza centro-centro) dei fori.", 0, 1, 'L'); pdf.ln(10)
     draw_frontal_schema(pdf, 20, pdf.get_y(), cols_data, 0.35, draw_quotes=True)
-    
-    # PAG 4: PIANTA
+    # PAG 4
     pdf.add_page(); pdf.set_fill_color(240, 240, 240); pdf.set_font("Arial", 'B', 11); pdf.cell(0, 8, "PIANTA (VISTA DALL'ALTO)", 0, 1, 'L', fill=True); pdf.ln(20)
     tot_len_cm = sum([c['w'] + (SPESSORE_FERRO*2) for c in cols_data]); scale_pianta = 0.65; start_x = 70; start_y = pdf.get_y() + 20; current_y = start_y
     pdf.draw_dimension_line_vert(start_x - 15, start_y, start_y + (tot_len_cm * scale_pianta), f"TOT: {tot_len_cm:.1f}", 'R')
@@ -204,69 +197,40 @@ def generate_pdf_report(project_name, parts_list, wood_data, iron_data, stats, c
         pdf.set_fill_color(255, 255, 255); pdf.set_draw_color(0, 0, 0); pdf.rect(start_x, current_y, d_mod_scaled, w_mod_scaled)
         pdf.set_xy(start_x, current_y - 5); pdf.set_font("Arial", '', 8); pdf.cell(d_mod_scaled, 5, f"P: {col['d']:.0f}", 0, 0, 'C')
         pdf.draw_dimension_line_vert(start_x + d_mod_scaled + 5, current_y, current_y + w_mod_scaled, f"{col['w']:.0f}", 'L'); current_y += w_mod_scaled 
-    
-    # PAG 5+: DETTAGLI (FIXED CENTERING & LAYOUT)
-    scale_det = 0.45 
-    page_width = 210.0
-    center_x = page_width / 2 # 105.0
-    gap_between_views = 40.0 # Aumentato per non sovrapporre
-    
+    # PAG 5+
+    scale_det = 0.45; page_width = 210.0; center_x = page_width / 2; gap_between_views = 40.0 
     for col in cols_data:
         pdf.add_page(); pdf.set_fill_color(240, 240, 240); pdf.set_font("Arial", 'B', 11); pdf.cell(0, 8, f"DETTAGLIO MODULO {col['letter']}", 0, 1, 'L', fill=True)
         pdf.set_font("Arial", '', 10); pdf.cell(0, 8, f"Dimensioni: {col['w']} (L) x {col['h']} (H) x {col['d']} (P) cm | {col['r']} Mensole", 0, 1, 'L'); pdf.ln(5)
-        
-        h_front = col['h'] * scale_det
-        w_front = col['w'] * scale_det
-        w_side = col['d'] * scale_det
-        
-        # Calcolo posizione X per centrare perfettamente il blocco: [Front] [Gap] [Side]
+        h_front = col['h'] * scale_det; w_front = col['w'] * scale_det; w_side = col['d'] * scale_det
         total_drawing_width = w_front + gap_between_views + w_side
         start_x_drawing = (page_width - total_drawing_width) / 2
-        
-        x_front = start_x_drawing
-        line_x = x_front + w_front + (gap_between_views / 2) # Linea quote esattamente in mezzo
-        x_side = x_front + w_front + gap_between_views
-        
-        base_y = (297 / 2) + (h_front / 2)
-        w_ferro_det = 0.5 
-
-        # 1. VISTA FRONTALE
+        x_front = start_x_drawing; line_x = x_front + w_front + (gap_between_views / 2); x_side = x_front + w_front + gap_between_views
+        base_y = (297 / 2) + (h_front / 2); w_ferro_det = 0.5 
+        # 1. FRONTALE
         pdf.set_xy(x_front, base_y - h_front - 8); pdf.set_font("Arial", 'B', 9); pdf.cell(w_front, 5, "VISTA FRONTALE", 0, 0, 'C')
         pdf.set_fill_color(0,0,0); pdf.rect(x_front, base_y - h_front, w_ferro_det, h_front, 'F'); pdf.rect(x_front + w_front - w_ferro_det, base_y - h_front, w_ferro_det, h_front, 'F')
         if col['mh']:
             for z in col['mh']: mz = z * scale_det; pdf.set_fill_color(180,180,180); pdf.rect(x_front + w_ferro_det, base_y - mz - (SPESSORE_LEGNO*scale_det), w_front - (2*w_ferro_det), (SPESSORE_LEGNO*scale_det), 'F')
         pdf.draw_dimension_line_horz(x_front, x_front + w_front, base_y + 5, f"L: {col['w']:.0f}")
-
-        # 2. QUOTE CENTRALI (SINGLE LINE TRA LE DUE VISTE)
+        # 2. QUOTE
         hole_centers = [SPESSORE_LEGNO/2.0] + [z + SPESSORE_LEGNO/2.0 for z in sorted(col['mh'])] + [col['h'] - SPESSORE_LEGNO/2.0]
-        y_first = base_y - (hole_centers[0]*scale_det)
-        y_last = base_y - (hole_centers[-1]*scale_det)
+        y_first = base_y - (hole_centers[0]*scale_det); y_last = base_y - (hole_centers[-1]*scale_det)
         pdf.line(line_x, y_first, line_x, y_last)
-        
         for i in range(len(hole_centers)):
-            hc = hole_centers[i]
-            yc = base_y - (hc * scale_det)
-            pdf.line(line_x - 1, yc, line_x + 1, yc)
-            
+            hc = hole_centers[i]; yc = base_y - (hc * scale_det); pdf.line(line_x - 1, yc, line_x + 1, yc)
             if i < len(hole_centers) - 1:
-                h_next = hole_centers[i+1]
-                dist = h_next - hc
-                y_next = base_y - (h_next * scale_det)
-                mid = (yc + y_next) / 2
+                h_next = hole_centers[i+1]; dist = h_next - hc; y_next = base_y - (h_next * scale_det); mid = (yc + y_next) / 2
                 pdf.set_xy(line_x + 2, mid - 2); pdf.set_font("Arial", '', 8); pdf.cell(10, 4, f"{dist:.1f}", 0, 0, 'L')
-
-        mid_tot = (y_first + y_last) / 2
-        pdf.set_xy(line_x - 25, mid_tot - 2); pdf.cell(23, 4, f"H Tot: {col['h']:.1f}", 0, 0, 'R')
-
-        # 3. VISTA LATERALE
+        mid_tot = (y_first + y_last) / 2; pdf.set_xy(line_x - 25, mid_tot - 2); pdf.cell(23, 4, f"H Tot: {col['h']:.1f}", 0, 0, 'R')
+        # 3. LATERALE
         pdf.set_xy(x_side, base_y - (col['h']*scale_det) - 8); pdf.set_font("Arial", 'B', 9); pdf.cell(w_side, 5, "VISTA LATERALE", 0, 0, 'C')
         pdf.set_fill_color(255,255,255); pdf.set_draw_color(0,0,0); pdf.rect(x_side, base_y - (col['h']*scale_det), w_side, (col['h']*scale_det))
         pdf.set_fill_color(0,0,0)
         holes_x = [OFFSET_LATERALI, col['d']/2, col['d']-OFFSET_LATERALI]
         for hc in hole_centers:
             y_hole = base_y - (hc * scale_det)
-            for hx in holes_x:
-                x_hole = x_side + (hx * scale_det); pdf.ellipse(x_hole-0.8, y_hole-0.8, 1.6, 1.6, 'F')
+            for hx in holes_x: x_hole = x_side + (hx * scale_det); pdf.ellipse(x_hole-0.8, y_hole-0.8, 1.6, 1.6, 'F')
         pdf.draw_dimension_line_horz(x_side, x_side + w_side, base_y + 5, f"P: {col['d']:.0f}")
 
     pdf.add_page(); pdf.set_fill_color(240, 240, 240); pdf.set_font("Arial", 'B', 11); pdf.cell(0, 8, "ESECUTIVI TAGLIO (FERRO)", 0, 1, 'L', fill=True); pdf.ln(10); scale_cut = 0.5; cursor_y = pdf.get_y() + 10
@@ -400,7 +364,126 @@ def load_user_file(f):
     try: apply_json_data(json.load(f)); st.session_state.last_loaded_file = f.name; st.success("Caricato!")
     except Exception as e: st.error(f"Errore: {e}")
 
-# --- 7. SIDEBAR ---
+# --- 7. README GENERATOR (MANUALE D'USO) ---
+def generate_readme_html():
+    html_content = f"""
+    <!DOCTYPE html>
+    <html lang="it">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Manuale Utente - Moby Configurator</title>
+        <style>
+            body {{ font-family: 'Arial', sans-serif; line-height: 1.6; color: #333; max-width: 800px; margin: 0 auto; padding: 20px; }}
+            header {{ text-align: center; border-bottom: 2px solid #eee; padding-bottom: 20px; margin-bottom: 30px; }}
+            h1 {{ color: #2c3e50; margin-bottom: 5px; }}
+            h2 {{ color: #e74c3c; border-left: 5px solid #e74c3c; padding-left: 10px; margin-top: 30px; }}
+            h3 {{ color: #3498db; }}
+            .feature-box {{ background: #f9f9f9; padding: 15px; border-radius: 5px; border: 1px solid #ddd; margin-bottom: 15px; }}
+            code {{ background: #eee; padding: 2px 5px; border-radius: 3px; font-family: monospace; }}
+            .footer {{ text-align: center; margin-top: 50px; font-size: 0.8em; color: #777; }}
+        </style>
+    </head>
+    <body>
+        <header>
+            <h1>MOBY CONFIGURATOR {VERSION}</h1>
+            <p>Manuale d'Uso Completo</p>
+        </header>
+
+        <section>
+            <h2>1. Introduzione</h2>
+            <p><strong>Moby Configurator</strong> è lo strumento aziendale per la progettazione, preventivazione e produzione delle librerie modulari. 
+            Permette di disegnare strutture su misura, calcolare i costi in tempo reale, generare schede tecniche per l'officina e preventivi commerciali per il cliente.</p>
+        </section>
+
+        <section>
+            <h2>2. Sidebar (Barra Laterale)</h2>
+            <p>Qui si definiscono i parametri geometrici e di progetto.</p>
+            <div class="feature-box">
+                <h3>Gestione File</h3>
+                <ul>
+                    <li><strong>Carica JSON:</strong> Ripristina un progetto salvato in precedenza.</li>
+                    <li><strong>Download JSON:</strong> (In fondo alla sidebar) Salva il lavoro corrente per modificarlo dopo.</li>
+                    <li><strong>Download STL:</strong> Scarica il file 3D grezzo.</li>
+                </ul>
+            </div>
+            <div class="feature-box">
+                <h3>Configurazione Moduli</h3>
+                <p>Si possono inserire da 1 a 10 moduli. Per ogni modulo puoi definire:</p>
+                <ul>
+                    <li><strong>L (Larghezza):</strong> Larghezza della mensola (es. 60, 90 cm).</li>
+                    <li><strong>P (Profondità):</strong> Profondità della struttura.</li>
+                    <li><strong>H (Altezza):</strong> Altezza totale del montante in ferro.</li>
+                    <li><strong>Alt. Mensole:</strong> Numero di ripiani.</li>
+                    <li><strong>Check "Alt. Mensole" (Manuale):</strong> Se attivato, puoi inserire l'altezza esatta da terra per ogni singola mensola.</li>
+                </ul>
+            </div>
+        </section>
+
+        <section>
+            <h2>3. Tab 1: Visualizzazione 3D</h2>
+            <p>Anteprima in tempo reale della struttura. Usa il mouse per ruotare, zoomare e spostare la vista.</p>
+        </section>
+
+        <section>
+            <h2>4. Tab 2: Esecutivi Produzione</h2>
+            <p>Area tecnica dedicata all'officina.</p>
+            <div class="feature-box">
+                <h3>Funzionalità Chiave</h3>
+                <ul>
+                    <li><strong>Distinta Materiali:</strong> Calcolo automatico kg ferro, kg legno e numero viti.</li>
+                    <li><strong>PDF Scheda Tecnica:</strong> Documento completo con:
+                        <ul>
+                            <li>Prospetto Frontale (Muto e Quotato).</li>
+                            <li>Pianta dall'alto.</li>
+                            <li>Dettaglio singolo modulo (Viste Frontale/Laterale con quote fori).</li>
+                            <li>Esecutivi di taglio per il laser.</li>
+                        </ul>
+                    </li>
+                    <li><strong>DXF Export:</strong> Scarica i file vettoriali per il taglio laser (tutti insieme o pezzo per pezzo).</li>
+                </ul>
+            </div>
+        </section>
+
+        <section>
+            <h2>5. Tab 3: Preventivatore & Commerciale</h2>
+            <p>Area gestionale per calcolare prezzi e stampare offerte.</p>
+            <div class="feature-box">
+                <h3>Gestione Costi & Magazzino</h3>
+                <ul>
+                    <li><strong>Loader Costi:</strong> Carica un file <code>.json</code> con il listino prezzi aggiornato.</li>
+                    <li><strong>Magazzino:</strong> Spunta "Ferro/Legno Disponibile" per abbattere i tempi di consegna.</li>
+                    <li><strong>Logistica:</strong> Scegli tra Corriere (costo spedizione) o Montaggio interno (calcolo ore/operai).</li>
+                </ul>
+            </div>
+            <div class="feature-box">
+                <h3>Economia</h3>
+                <ul>
+                    <li><strong>Costo Vivo:</strong> Quanto costa all'azienda produrre il pezzo (Materiali + Lavoro + Imballo).</li>
+                    <li><strong>Prezzo Vendita:</strong> Calcolato aggiungendo il <strong>Markup %</strong> al costo vivo.</li>
+                </ul>
+            </div>
+            <div class="feature-box">
+                <h3>PDF Preventivo</h3>
+                <p>Genera un documento elegante per il cliente con:</p>
+                <ul>
+                    <li>Intestazione Vontree.</li>
+                    <li>Disegno quotato della libreria.</li>
+                    <li>Tabella prezzi chiara (Imponibile + IVA).</li>
+                    <li>Condizioni di pagamento e note personalizzate.</li>
+                </ul>
+            </div>
+        </section>
+
+        <div class="footer">
+            <p>{COPYRIGHT} | Generato automaticamente da Moby Configurator</p>
+        </div>
+    </body>
+    </html>
+    """
+    return html_content
+
+# --- 8. SIDEBAR ---
 load_default_if_exists()
 with st.sidebar:
     try: st.image("logo.png", width=200) 
@@ -477,7 +560,10 @@ with st.sidebar:
     c2.download_button("🧊 STL", get_bin_stl(stl_triangles), fname_stl, "application/octet-stream")
     st.divider(); st.caption(VERSION)
 
-# --- 8. TABS MAIN ---
+# --- 9. TABS MAIN & MANUAL BUTTON ---
+# PULSANTE MANUALE (TOP PAGE)
+st.download_button("📘 SCARICA MANUALE D'USO", generate_readme_html(), "Manuale_Moby.html", "text/html", help="Clicca per scaricare la guida completa alle funzionalità")
+
 tab1, tab2, tab3 = st.tabs(["🎥 3D Config", "🏭 ESECUTIVI PRODUZIONE", "💰 PREVENTIVATORE"])
 
 with tab1:
