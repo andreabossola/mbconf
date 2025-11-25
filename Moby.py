@@ -8,7 +8,7 @@ import ezdxf
 from datetime import datetime
 
 # --- 1. SETUP & LOGIN ---
-st.set_page_config(layout="wide", page_title="Moby v0.9 (Reorder Fix)")
+st.set_page_config(layout="wide", page_title="Moby v1.0 Stable")
 
 def check_login():
     if "logged_in" not in st.session_state:
@@ -18,7 +18,7 @@ def check_login():
         c_logo, c_title = st.columns([1, 4])
         try: c_logo.image("logo.png", width=150)
         except: pass
-        c_title.markdown("## 🔒 Area Riservata - v0.9")
+        c_title.markdown("## 🔒 Area Riservata - v1.0")
         c1, c2 = st.columns(2)
         u = c1.text_input("User")
         p = c2.text_input("Password", type="password")
@@ -39,7 +39,7 @@ SPESSORE_LEGNO = 4.0
 SPESSORE_FERRO = 0.3  
 DIAMETRO_FORO = 0.6 
 OFFSET_LATERALI = 3.0 
-VERSION = "v0.9.1 Reorder Fixed"
+VERSION = "v1.0 Stable"
 COPYRIGHT = "© Andrea Bossola 2025"
 stl_triangles = [] 
 
@@ -47,51 +47,59 @@ stl_triangles = []
 def get_timestamp_string(): return datetime.now().strftime("%Y%m%d_%H%M")
 def clean_filename(name): return "".join([c if c.isalnum() else "_" for c in name])
 
-# --- GESTIONE STATO ORDINE MODULI ---
-def init_module_order(n):
-    # Se non esiste l'ordine, crealo sequenziale [0, 1, 2...]
+# --- GESTIONE STATO ---
+# Inizializza le variabili di stato se non esistono
+def init_state():
     if 'module_order' not in st.session_state:
-        st.session_state.module_order = list(range(n))
-    
-    # Se cambiamo numero colonne, adattiamo la lista
+        st.session_state.module_order = [0, 1] # Default 2 moduli
+    if 'num_colonne' not in st.session_state:
+        st.session_state.num_colonne = 2
+    if 'last_loaded_file' not in st.session_state:
+        st.session_state.last_loaded_file = None
+
+    # Assicura che ci siano dati per ogni ID presente in module_order
+    for mod_id in st.session_state.module_order:
+        if f"w_{mod_id}" not in st.session_state:
+            # Valori default iniziali
+            st.session_state[f"w_{mod_id}"] = 60
+            st.session_state[f"h_{mod_id}"] = 200
+            st.session_state[f"d_{mod_id}"] = 30
+            st.session_state[f"r_{mod_id}"] = 4
+            st.session_state[f"man_{mod_id}"] = False
+
+def update_num_modules():
+    # Funzione chiamata quando cambia il numero di moduli input
+    n = st.session_state.num_colonne
     current = st.session_state.module_order
     if n > len(current):
-        # Aggiungi i nuovi ID in coda
+        # Aggiungi nuovi ID
         next_id = max(current) + 1 if current else 0
         for _ in range(n - len(current)):
-            current.append(next_id)
+            st.session_state.module_order.append(next_id)
             next_id += 1
     elif n < len(current):
-        # Taglia la lista mantenendo l'ordine attuale
+        # Taglia la coda
         st.session_state.module_order = current[:n]
+    # Force rerun per aggiornare UI
+    init_state() 
 
-def swap_modules(pos_idx, direction):
-    # direction: -1 (su/sx), +1 (giu/dx)
+def swap_modules(idx1, idx2):
     order = st.session_state.module_order
-    new_idx = pos_idx + direction
-    
-    if 0 <= new_idx < len(order):
-        # Scambia gli ID nella lista ordine
-        order[pos_idx], order[new_idx] = order[new_idx], order[pos_idx]
-        st.session_state.module_order = order
+    order[idx1], order[idx2] = order[idx2], order[idx1]
+    st.session_state.module_order = order
 
 # --- 3. NESTING ENGINE ---
 class Sheet:
     def __init__(self, w, h, id):
         self.w, self.h, self.id = w, h, id
         self.items = []
-        self.cursor_x = 0
-        self.cursor_y = 0
-        self.row_h = 0
-        self.used_area = 0 
-
+        self.cursor_x, self.cursor_y, self.row_h, self.used_area = 0, 0, 0, 0
     def add(self, item):
         margin = 1.0 
         iw, ih = item['w'] + margin, item['h'] + margin
         if self.cursor_x + iw > self.w:
             self.cursor_x, self.cursor_y, self.row_h = 0, self.cursor_y + self.row_h, 0
         if self.cursor_y + ih > self.h: return False
-        
         item['x_pos'], item['y_pos'] = self.cursor_x, self.cursor_y
         self.items.append(item)
         self.used_area += item['w'] * item['h']
@@ -119,7 +127,6 @@ def generate_dxf(sheets, sheet_w, sheet_h, project_name):
     msp = doc.modelspace()
     for name, col in [('TAGLIO',1), ('FORI',5), ('BORDO_LASTRA',7), ('TESTO',3)]:
         doc.layers.new(name=name, dxfattribs={'color': col})
-    
     ox = 0 
     date_str = datetime.now().strftime("%d/%m/%Y")
     for s in sheets:
@@ -137,18 +144,19 @@ def generate_dxf(sheets, sheet_w, sheet_h, project_name):
     doc.write(out)
     return out.getvalue()
 
-# --- 5. LOAD CONFIG ---
+# --- 5. LOGICA CARICAMENTO (FIXED) ---
 def load_config(f):
+    # Controllo per evitare il loop di ricaricamento
+    if f is None: return
+    if st.session_state.last_loaded_file == f.name: return # Già caricato questo file
+
     try:
         data = json.load(f)
         st.session_state['project_name'] = data.get('project_name', 'Progetto')
         
-        # Carica numero colonne e aggiorna lo stato PRIMA del render
         nc = data.get('num_colonne', 1)
         st.session_state['num_colonne'] = nc
-        
-        # Reset Ordine
-        st.session_state.module_order = list(range(nc))
+        st.session_state.module_order = list(range(nc)) # Reset ordine al caricamento
         
         for i, col in enumerate(data.get('cols', [])):
             st.session_state[f"w_{i}"] = col.get('w', 60)
@@ -159,35 +167,34 @@ def load_config(f):
             if 'man_heights' in col:
                 for j, val in enumerate(col['man_heights']):
                     st.session_state[f"h_shelf_{i}_{j}"] = val
-        st.success("Caricato!")
-    except: st.error("Errore File")
+        
+        st.session_state.last_loaded_file = f.name # Marca il file come caricato
+        st.success("File Caricato Correttamente!")
+        # Non serve rerun qui, streamlit aggiornerà al prossimo ciclo
+    except Exception as e: st.error(f"Errore File: {e}")
 
 # --- 6. INTERFACCIA ---
+init_state() # Inizializza stato base
+
 with st.sidebar:
     try: st.image("logo.png", width=200) 
     except: st.markdown("## MOBY")
     
-    # --- FIX INPUT NOME PROGETTO ---
     if 'project_name' not in st.session_state: st.session_state['project_name'] = "Progetto"
-    # Usiamo direttamente key, senza value, per evitare conflitti
     st.text_input("Nome Progetto", key='project_name_input', value=st.session_state['project_name'])
     st.session_state['project_name'] = clean_filename(st.session_state['project_name_input'])
     
     st.divider()
     
+    # File Uploader
     f = st.file_uploader("Carica JSON", type=["json"])
     if f: load_config(f)
-    st.divider()
     
+    st.divider()
     st.header("📐 Moduli")
     
-    # --- FIX INPUT NUM COLONNE ---
-    if 'num_colonne' not in st.session_state: st.session_state['num_colonne'] = 2
-    # Rimuoviamo il parametro value, lasciamo gestire tutto allo stato
-    num_colonne = st.number_input("Quantità Moduli", min_value=1, max_value=10, key="num_colonne")
-    
-    # Aggiorna la lista dell'ordine in base al numero colonne
-    init_module_order(num_colonne)
+    # Input Numero Colonne con Callback per aggiornare la lista ordine
+    st.number_input("Quantità Moduli", min_value=1, max_value=10, key="num_colonne", on_change=update_num_modules)
     
     dati_colonne_ordinate = []
     lista_pezzi_ferro = [] 
@@ -196,46 +203,42 @@ with st.sidebar:
     for pos_index, module_id in enumerate(st.session_state.module_order):
         module_letter = chr(65 + module_id) # A, B, C...
         
-        # Recupero valori di default se non esistono nel session state
-        def_w = st.session_state.get(f"w_{module_id}", 60)
-        def_h = st.session_state.get(f"h_{module_id}", 200)
-        def_d = st.session_state.get(f"d_{module_id}", 30)
-        def_r = st.session_state.get(f"r_{module_id}", 4)
-        def_man = st.session_state.get(f"man_{module_id}", False)
-        
+        # Definisci il container per il modulo
         with st.expander(f"POSIZIONE {pos_index+1} (Modulo {module_letter})", expanded=False):
-            # Pulsanti Spostamento
+            # Spostamento
             c_move1, c_move2 = st.columns(2)
             if pos_index > 0:
-                if c_move1.button(f"⬆️ Sposta Su", key=f"btn_up_{module_id}"):
-                    swap_modules(pos_index, -1)
+                if c_move1.button(f"⬅️ Sposta SX", key=f"btn_up_{module_id}"):
+                    swap_modules(pos_index, pos_index - 1)
                     st.rerun()
-            if pos_index < num_colonne - 1:
-                if c_move2.button(f"⬇️ Sposta Giù", key=f"btn_down_{module_id}"):
-                    swap_modules(pos_index, 1)
+            if pos_index < len(st.session_state.module_order) - 1:
+                if c_move2.button(f"➡️ Sposta DX", key=f"btn_down_{module_id}"):
+                    swap_modules(pos_index, pos_index + 1)
                     st.rerun()
 
             c1, c2 = st.columns(2)
-            # NOTA: Qui uso 'value=def_w' la prima volta, ma Streamlit gestisce la key
-            # Se la key esiste già, 'value' viene ignorato (comportamento corretto).
-            w = c1.number_input("Largh.", 30, 200, def_w, key=f"w_{module_id}")
-            d = c2.number_input("Prof.", 20, 100, def_d, key=f"d_{module_id}")
+            # IMPORTANTE: Qui usiamo SOLO key. I valori sono letti/scritti direttamente in session_state
+            w = c1.number_input("Largh.", 30, 200, key=f"w_{module_id}")
+            d = c2.number_input("Prof.", 20, 100, key=f"d_{module_id}")
             c3, c4 = st.columns(2)
-            h = c3.number_input("Alt.", 50, 400, def_h, key=f"h_{module_id}")
-            r = c4.number_input("Ripiani", 1, 20, def_r, key=f"r_{module_id}")
+            h = c3.number_input("Alt.", 50, 400, key=f"h_{module_id}")
+            r = c4.number_input("Ripiani", 1, 20, key=f"r_{module_id}")
             
-            is_manual = st.checkbox("Posizione Libera", value=def_man, key=f"man_{module_id}")
+            is_manual = st.checkbox("Posizione Libera", key=f"man_{module_id}")
             mh = []
             
             z_shelves = []
             if is_manual:
                 step = (h - SPESSORE_LEGNO)/(r-1) if r>1 else 0
                 for k in range(r):
-                    def_shelf_val = int(k*step)
-                    if k == r-1 and r > 1: def_shelf_val = int(h - SPESSORE_LEGNO)
-                    # Recupera valore salvato se esiste
-                    saved_shelf = st.session_state.get(f"h_shelf_{module_id}_{k}", def_shelf_val)
-                    val = st.number_input(f"M {k+1}", value=saved_shelf, key=f"h_shelf_{module_id}_{k}")
+                    # Calcolo default se non esiste valore
+                    def_val = int(k*step)
+                    if k == r-1 and r > 1: def_val = int(h - SPESSORE_LEGNO)
+                    # Se la chiave non esiste nel session state, la creo col default
+                    if f"h_shelf_{module_id}_{k}" not in st.session_state:
+                        st.session_state[f"h_shelf_{module_id}_{k}"] = def_val
+                    
+                    val = st.number_input(f"M {k+1}", key=f"h_shelf_{module_id}_{k}")
                     mh.append(val)
                 z_shelves = [float(x) for x in mh]
             else:
@@ -256,10 +259,8 @@ with st.sidebar:
                 holes_coords.append((d / 2.0, cy))         
                 holes_coords.append((d - OFFSET_LATERALI, cy)) 
             
-            # Label univoca per nesting
-            lbl_suffix = f"{module_letter}"
-            lista_pezzi_ferro.append({"w": d, "h": h, "lbl": f"M_{lbl_suffix}_SX", "holes": holes_coords, "rotated": False})
-            lista_pezzi_ferro.append({"w": d, "h": h, "lbl": f"M_{lbl_suffix}_DX", "holes": holes_coords, "rotated": False})
+            lista_pezzi_ferro.append({"w": d, "h": h, "lbl": f"Mod_{module_letter}_SX", "holes": holes_coords, "rotated": False})
+            lista_pezzi_ferro.append({"w": d, "h": h, "lbl": f"Mod_{module_letter}_DX", "holes": holes_coords, "rotated": False})
 
     st.markdown("---")
     st.caption(f"{COPYRIGHT} | {VERSION}")
@@ -302,17 +303,16 @@ fname_json = f"{prj}_{ts}.json"
 fname_stl = f"{prj}_{ts}.stl"
 fname_dxf = f"{prj}_{ts}_Taglio.dxf"
 
-# Salvataggio dati ordinati per ID
-cols_to_save = [None] * num_colonne
+cols_to_save = [None] * len(dati_colonne_ordinate)
 for dc in dati_colonne_ordinate:
     idx = ord(dc['letter']) - 65
-    if idx < num_colonne:
+    if idx < len(cols_to_save):
          cols_to_save[idx] = {
              "w": dc['w'], "h": dc['h'], "d": dc['d'], "r": dc['r'], 
              "manual": dc['man'], "man_heights": dc['mh']
          }
 cols_to_save = [c for c in cols_to_save if c is not None]
-proj_data = {"project_name": prj, "num_colonne":num_colonne, "cols":cols_to_save}
+proj_data = {"project_name": prj, "num_colonne":st.session_state.num_colonne, "cols":cols_to_save}
 
 with st.sidebar:
     c1, c2 = st.columns(2)
