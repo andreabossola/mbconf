@@ -11,7 +11,7 @@ from datetime import datetime
 from fpdf import FPDF
 
 # --- 1. SETUP & LOGIN ---
-st.set_page_config(layout="wide", page_title="Moby v2.1.1 Final Polish")
+st.set_page_config(layout="wide", page_title="Moby v22 Camera Fix")
 
 def check_login():
     if "logged_in" not in st.session_state:
@@ -45,7 +45,7 @@ OFFSET_LATERALI = 3.0
 PESO_SPECIFICO_FERRO = 7.85 
 PESO_SPECIFICO_LEGNO = 0.70 
 
-VERSION = "v2.1.1 Final Polish"
+VERSION = "v22 Camera Fix"
 COPYRIGHT = "© Andrea Bossola 2025"
 stl_triangles = [] 
 
@@ -107,10 +107,10 @@ def generate_pdf_report(project_name, parts_list, wood_data, iron_data, stats, c
     pdf.set_text_color(0, 0, 0)
     pdf.set_font("Arial", 'B', 11)
     pdf.cell(0, 8, "PROSPETTO FRONTALE (MUTO)", 0, 1, 'L', fill=True) 
-    pdf.ln(10) # Spazio aumentato
+    pdf.ln(10) 
     
     start_x = 20
-    start_y = pdf.get_y() + 20 # PIÙ BASSO
+    start_y = pdf.get_y() + 20 
     scale = 0.35 
     current_x = start_x
     pdf.line(10, start_y + 120, 200, start_y + 120) 
@@ -141,6 +141,7 @@ def generate_pdf_report(project_name, parts_list, wood_data, iron_data, stats, c
     pdf.cell(45, 8, f"Totale: {stats['peso_tot']:.1f} kg", 1)
     pdf.cell(55, 8, f"Viteria: {stats['viti']} pz", 1, 1)
     pdf.ln(10)
+    
     pdf.set_font("Arial", 'B', 11)
     pdf.cell(0, 8, "DISTINTA LEGNO (Mensole)", 0, 1, 'L', fill=True)
     pdf.ln(2)
@@ -156,6 +157,7 @@ def generate_pdf_report(project_name, parts_list, wood_data, iron_data, stats, c
             pdf.cell(40, 8, f"{row['Pezzi']}", 1)
             pdf.cell(40, 8, f"{row['Metri Totali']:.1f} m", 1, 1)
     pdf.ln(10)
+    
     pdf.set_font("Arial", 'B', 11)
     pdf.cell(0, 8, "DISTINTA FERRO (Fianchi)", 0, 1, 'L', fill=True)
     pdf.ln(2)
@@ -171,7 +173,7 @@ def generate_pdf_report(project_name, parts_list, wood_data, iron_data, stats, c
             pdf.cell(40, 8, f"{row['Pezzi']}", 1)
             pdf.ln()
 
-    # PAG 3: QUOTATO
+    # PAG 3
     pdf.add_page()
     pdf.set_fill_color(240, 240, 240)
     pdf.set_font("Arial", 'B', 11)
@@ -180,7 +182,7 @@ def generate_pdf_report(project_name, parts_list, wood_data, iron_data, stats, c
     pdf.cell(0, 6, "* Le quote interne indicano la distanza (interasse) tra i fori delle mensole.", 0, 1, 'L')
     pdf.ln(15)
     
-    start_y = pdf.get_y() + 20 # PIÙ BASSO
+    start_y = pdf.get_y() + 20
     current_x = 20
     w_ferro_pdf = 0.3
     tot_len_cm = sum([c['w'] + (SPESSORE_FERRO*2) for c in cols_data]) 
@@ -201,6 +203,7 @@ def generate_pdf_report(project_name, parts_list, wood_data, iron_data, stats, c
         current_x += w + w_ferro_pdf
         pdf.set_fill_color(0, 0, 0) 
         pdf.rect(current_x, start_y + (120 - h), w_ferro_pdf, h, 'F') 
+        
         pdf.set_font("Arial", '', 7)
         x_quota = current_x - (w/2) - (w_ferro_pdf/2)
         if len(z_centers) > 1:
@@ -209,6 +212,7 @@ def generate_pdf_report(project_name, parts_list, wood_data, iron_data, stats, c
                 y_mid = start_y + 120 - ((z_centers[i] + z_centers[i+1])/2 * scale)
                 pdf.set_xy(x_quota - 5, y_mid - 2)
                 pdf.cell(10, 4, f"{dist:.1f}", 0, 0, 'C')
+        
         pdf.set_xy(current_x - w - 1, start_y + 122)
         pdf.set_font("Arial", 'B', 8)
         pdf.cell(w+2, 5, f"Mod.{col['letter']}", 0, 1, 'C')
@@ -216,19 +220,18 @@ def generate_pdf_report(project_name, parts_list, wood_data, iron_data, stats, c
 
     pdf.draw_dimension_line_horz(20, 20 + (tot_len_cm * scale), start_y + 135, f"LARGHEZZA TOT: {tot_len_cm:.1f} cm")
 
-    # PAG 4: PIANTA RUOTATA
+    # PAG 4
     pdf.add_page()
     pdf.set_fill_color(240, 240, 240)
     pdf.set_font("Arial", 'B', 11)
     pdf.cell(0, 8, "PIANTA (VISTA DALL'ALTO)", 0, 1, 'L', fill=True)
     pdf.ln(20)
     
-    scale_pianta = 0.65 # ZOOM RUOTATO
-    start_x = 70 # Centrato orizzontalmente
-    start_y = pdf.get_y() + 20 # Più basso
+    scale_pianta = 0.65 
+    start_x = 70 
+    start_y = pdf.get_y() + 20 
     current_y = start_y
     
-    # Disegno Verticale
     pdf.draw_dimension_line_vert(start_x - 15, start_y, start_y + (tot_len_cm * scale_pianta), f"TOT: {tot_len_cm:.1f}", 'R')
     
     for col in cols_data:
@@ -239,18 +242,14 @@ def generate_pdf_report(project_name, parts_list, wood_data, iron_data, stats, c
         pdf.set_draw_color(0, 0, 0)
         pdf.rect(start_x, current_y, d_mod_scaled, w_mod_scaled)
         
-        # P (Sopra)
         pdf.set_xy(start_x, current_y - 5)
         pdf.set_font("Arial", '', 8)
         pdf.cell(d_mod_scaled, 5, f"P: {col['d']:.0f}", 0, 0, 'C')
-        
-        # L (Destra)
         pdf.draw_dimension_line_vert(start_x + d_mod_scaled + 5, current_y, current_y + w_mod_scaled, f"{col['w']:.0f}", 'L')
         current_y += w_mod_scaled 
 
-    # --- PAGINE DETTAGLIO SINGOLO MODULO (CENTRATO) ---
+    # PAG 5+
     scale_det = 0.45 
-    
     for col in cols_data:
         pdf.add_page()
         pdf.set_fill_color(240, 240, 240)
@@ -261,13 +260,9 @@ def generate_pdf_report(project_name, parts_list, wood_data, iron_data, stats, c
         pdf.ln(5)
         
         h_front = col['h'] * scale_det
-        # CENTRATURA VERTICALE
-        # Altezza disponibile ~250mm. Centriamo il blocco.
-        # base_y è la "terra" del disegno.
-        base_y = (297 / 2) + (h_front / 2) + 20 # Centro A4 + metà altezza + header offset
+        base_y = (297 / 2) + (h_front / 2) + 20 
         center_x = 105 
         
-        # VISTA FRONTALE
         w_front = col['w'] * scale_det
         x_front = center_x - w_front - 20 
         w_ferro_det = 0.5 
@@ -289,7 +284,6 @@ def generate_pdf_report(project_name, parts_list, wood_data, iron_data, stats, c
         pdf.cell(w_front + (w_ferro_det*2), 5, "VISTA FRONTALE", 0, 0, 'C')
         pdf.draw_dimension_line_horz(x_front, x_front + w_front + (w_ferro_det*2), base_y + 5, f"L: {col['w']:.0f}")
 
-        # ASSE CENTRALE
         line_x = center_x
         line_top = base_y - h_front
         line_bot = base_y
@@ -311,7 +305,6 @@ def generate_pdf_report(project_name, parts_list, wood_data, iron_data, stats, c
                 pdf.set_xy(line_x + 3, mid_y_quota - 2)
                 pdf.cell(10, 4, f"{dist:.1f}", 0, 0, 'L')
 
-        # VISTA LATERALE
         x_side = center_x + 40
         w_side = col['d'] * scale_det
         h_side = col['h'] * scale_det
@@ -330,7 +323,6 @@ def generate_pdf_report(project_name, parts_list, wood_data, iron_data, stats, c
         pdf.cell(w_side, 5, "VISTA LATERALE", 0, 0, 'C')
         pdf.draw_dimension_line_horz(x_side, x_side + w_side, base_y + 5, f"P: {col['d']:.0f}")
 
-    # --- PAGINE ESECUTIVI TAGLIO ---
     pdf.add_page()
     pdf.set_fill_color(240, 240, 240)
     pdf.set_font("Arial", 'B', 11)
@@ -497,7 +489,7 @@ with st.sidebar:
             h = c3.number_input("H", 50, 400, value=def_h, key=f"h_{i}")
             r = c4.number_input("Rip", 1, 20, value=def_r, key=f"r_{i}")
             
-            is_manual = st.checkbox("Alt. Mensole", value=def_man, key=f"man_{i}")
+            is_manual = st.checkbox("Libera", value=def_man, key=f"man_{i}")
             mh = []
             z_shelves = []
             if is_manual:
@@ -532,6 +524,9 @@ with st.sidebar:
 
     # --- 3D PLOT ---
     fig = go.Figure()
+    # CAMARA POSITION FIX
+    camera = dict(eye=dict(x=0.5, y=-2.0, z=0.5)) 
+    
     cx = 0 
     for dc in dati_colonne:
         lbl = f"Mod {dc['letter']}"
@@ -567,7 +562,16 @@ with st.sidebar:
 tab1, tab2 = st.tabs(["🎥 3D Config", "🏭 ESECUTIVI PRODUZIONE"])
 
 with tab1:
-    fig.update_layout(scene=dict(xaxis=dict(visible=False), yaxis=dict(visible=False), zaxis=dict(title="H"), aspectmode='data', bgcolor="white"), margin=dict(t=0,b=0,l=0,r=0), height=600)
+    # FIX: CAMARA + UIREVISION
+    fig.update_layout(
+        scene=dict(
+            xaxis=dict(visible=False), yaxis=dict(visible=False), zaxis=dict(title="H"), 
+            aspectmode='data', bgcolor="white"
+        ), 
+        scene_camera=camera, # <--- CAMERA FISSA QUI
+        uirevision='constant', # <--- EVITA RESET
+        margin=dict(t=0,b=0,l=0,r=0), height=600
+    )
     st.plotly_chart(fig, width="stretch")
 
 with tab2:
@@ -662,4 +666,3 @@ with tab2:
             c_name.write(f"**{part['lbl']}** ({part['h']}x{part['w']} cm)")
             dxf_single = generate_single_dxf(part, prj)
             c_down.download_button("⬇️ DXF", dxf_single, f"{part['lbl']}.dxf", "application/dxf", key=f"dxf_{idx}")
-
