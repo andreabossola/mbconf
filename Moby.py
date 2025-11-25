@@ -1,4 +1,3 @@
-
 import streamlit as st
 import plotly.graph_objects as go
 import struct
@@ -11,7 +10,7 @@ from datetime import datetime
 from fpdf import FPDF
 
 # --- 1. SETUP & LOGIN ---
-st.set_page_config(layout="wide", page_title="Moby v23 Camera Fix")
+st.set_page_config(layout="wide", page_title="Moby v23.1 ERP Prep")
 
 def check_login():
     if "logged_in" not in st.session_state:
@@ -37,7 +36,7 @@ def check_login():
 
 check_login()
 
-# --- 2. COSTANTI ---
+# --- 2. COSTANTI GEOMETRICHE ---
 SPESSORE_LEGNO = 4.0 
 SPESSORE_FERRO = 0.3 
 DIAMETRO_FORO = 0.6 
@@ -45,7 +44,7 @@ OFFSET_LATERALI = 3.0
 PESO_SPECIFICO_FERRO = 7.85 
 PESO_SPECIFICO_LEGNO = 0.70 
 
-VERSION = "v23 Camera Perfected"
+VERSION = "v23.1 ERP Prep"
 COPYRIGHT = "© Andrea Bossola 2025"
 stl_triangles = [] 
 
@@ -53,11 +52,60 @@ stl_triangles = []
 def get_timestamp_string(): return datetime.now().strftime("%Y%m%d_%H%M")
 def clean_filename(name): return "".join([c if c.isalnum() else "_" for c in name])
 
-# --- 3. PDF GENERATOR ENGINE ---
+# --- 3. GESTIONE TEMPI & COSTI (DEFAULT) ---
+# Struttura base vuota (o a zero)
+DEFAULT_COSTS = {
+    # Costi Orari / Materiali Base
+    "costo_ferro_kg": 0.0,
+    "costo_legno_mq": 0.0, # O metro cubo, o lineare, usiamo parametro generico
+    "costo_ora_operaio": 0.0,
+    "costo_ora_viaggio": 0.0,
+    
+    # Tempi Standard (Giorni)
+    "gg_ordine_ferro": 1,
+    "gg_arrivo_lastra": 5,
+    "gg_verniciatura_ferro": 5, # Consegna + Lavoro + Ritiro
+    
+    # Lavorazioni (Minuti/Ore)
+    "min_taglio_legno_pezzo": 0.0,
+    "min_colore_legno_metro": 0.0,
+    "min_finitura_legno_metro": 0.0,
+    "min_finitura_ferro_metro": 0.0,
+    
+    # Montaggio
+    "min_preassemblaggio_modulo": 0.0,
+    "min_preassemblaggio_mensola": 0.0,
+    "ore_pulizia": 2.0,
+    "ore_imballo": 0.0,
+    
+    # Consegna
+    "ore_prep_spedizione": 2.0,
+    "km_viaggio": 0,
+    "ore_montaggio_in_loco": 0.0,
+    "num_montatori": 2
+}
+
+def load_costs_config():
+    """Carica i default da JSON se esiste, altrimenti usa zeri"""
+    if 'costs_config' not in st.session_state:
+        if os.path.exists("tempicosti_default.json"):
+            try:
+                with open("tempicosti_default.json", "r") as f:
+                    st.session_state.costs_config = json.load(f)
+            except:
+                st.session_state.costs_config = DEFAULT_COSTS.copy()
+        else:
+            st.session_state.costs_config = DEFAULT_COSTS.copy()
+
+# Carichiamo subito i costi
+load_costs_config()
+
+# --- 4. PDF ENGINE ---
 class PDFReport(FPDF):
-    def __init__(self, project_name):
+    def __init__(self, project_name, colors):
         super().__init__()
         self.project_name = project_name
+        self.colors = colors # Dict {legno: str, ferro: str}
         
     def header(self):
         if os.path.exists("logo.png"):
@@ -68,8 +116,13 @@ class PDFReport(FPDF):
         self.set_font('Arial', '', 9)
         date_str = datetime.now().strftime('%d/%m/%Y')
         self.cell(0, 6, f"Progetto: {self.project_name} | Data: {date_str}", 0, 1, 'R')
-        self.line(10, 25, 200, 25)
-        self.ln(20) 
+        
+        # RIGA FINITURE NEL PDF
+        self.set_font('Arial', 'I', 8)
+        self.cell(0, 6, f"Finiture: Legno {self.colors['legno']} - Ferro {self.colors['ferro']}", 0, 1, 'R')
+        
+        self.line(10, 30, 200, 30) # Abbassata linea
+        self.ln(25) 
 
     def footer(self):
         self.set_y(-15)
@@ -98,8 +151,10 @@ class PDFReport(FPDF):
             self.set_xy(x - 12, mid_y - 2)
             self.cell(10, 4, text, 0, 0, 'R')
 
-def generate_pdf_report(project_name, parts_list, wood_data, iron_data, stats, cols_data):
-    pdf = PDFReport(project_name)
+def generate_pdf_report(project_name, parts_list, wood_data, iron_data, stats, cols_data, colors):
+    pdf = PDFReport(project_name, colors)
+    # ... (RESTO DEL PDF GENERATOR IDENTICO ALLA V22.1, SALVO I COLORI NELL'HEADER) ...
+    # ... PER BREVITÀ, RICOPIO SOLO LA PARTE LOGICA, IL RESTO RIMANE UGUALE ...
     
     # PAG 1
     pdf.add_page()
@@ -108,7 +163,6 @@ def generate_pdf_report(project_name, parts_list, wood_data, iron_data, stats, c
     pdf.set_font("Arial", 'B', 11)
     pdf.cell(0, 8, "PROSPETTO FRONTALE (MUTO)", 0, 1, 'L', fill=True) 
     pdf.ln(10) 
-    
     start_x = 20
     start_y = pdf.get_y() + 20 
     scale = 0.35 
@@ -128,7 +182,7 @@ def generate_pdf_report(project_name, parts_list, wood_data, iron_data, stats, c
         pdf.set_fill_color(0, 0, 0) 
         pdf.rect(current_x, start_y + (120 - h), w_ferro_pdf, h, 'F') 
         current_x += w_ferro_pdf + 0.2 
-        
+    
     # PAG 2
     pdf.add_page()
     pdf.set_fill_color(240, 240, 240)
@@ -143,7 +197,7 @@ def generate_pdf_report(project_name, parts_list, wood_data, iron_data, stats, c
     pdf.ln(10)
     
     pdf.set_font("Arial", 'B', 11)
-    pdf.cell(0, 8, "DISTINTA LEGNO (Mensole)", 0, 1, 'L', fill=True)
+    pdf.cell(0, 8, "DISTINTA LEGNO", 0, 1, 'L', fill=True)
     pdf.ln(2)
     pdf.set_font("Arial", 'B', 9)
     pdf.cell(40, 8, "Larghezza", 1)
@@ -159,7 +213,7 @@ def generate_pdf_report(project_name, parts_list, wood_data, iron_data, stats, c
     pdf.ln(10)
     
     pdf.set_font("Arial", 'B', 11)
-    pdf.cell(0, 8, "DISTINTA FERRO (Fianchi)", 0, 1, 'L', fill=True)
+    pdf.cell(0, 8, "DISTINTA FERRO", 0, 1, 'L', fill=True)
     pdf.ln(2)
     pdf.set_font("Arial", 'B', 9)
     pdf.cell(40, 8, "Altezza", 1)
@@ -181,14 +235,11 @@ def generate_pdf_report(project_name, parts_list, wood_data, iron_data, stats, c
     pdf.set_font("Arial", 'I', 8)
     pdf.cell(0, 6, "* Le quote interne indicano la distanza (interasse) tra i fori delle mensole.", 0, 1, 'L')
     pdf.ln(15)
-    
     start_y = pdf.get_y() + 20
     current_x = 20
     w_ferro_pdf = 0.3
     tot_len_cm = sum([c['w'] + (SPESSORE_FERRO*2) for c in cols_data]) 
-    
     pdf.line(10, start_y + 120, 200, start_y + 120) 
-    
     for col in cols_data:
         h, w = col['h'] * scale, col['w'] * scale
         pdf.set_fill_color(0, 0, 0) 
@@ -203,7 +254,6 @@ def generate_pdf_report(project_name, parts_list, wood_data, iron_data, stats, c
         current_x += w + w_ferro_pdf
         pdf.set_fill_color(0, 0, 0) 
         pdf.rect(current_x, start_y + (120 - h), w_ferro_pdf, h, 'F') 
-        
         pdf.set_font("Arial", '', 7)
         x_quota = current_x - (w/2) - (w_ferro_pdf/2)
         if len(z_centers) > 1:
@@ -212,12 +262,10 @@ def generate_pdf_report(project_name, parts_list, wood_data, iron_data, stats, c
                 y_mid = start_y + 120 - ((z_centers[i] + z_centers[i+1])/2 * scale)
                 pdf.set_xy(x_quota - 5, y_mid - 2)
                 pdf.cell(10, 4, f"{dist:.1f}", 0, 0, 'C')
-        
         pdf.set_xy(current_x - w - 1, start_y + 122)
         pdf.set_font("Arial", 'B', 8)
         pdf.cell(w+2, 5, f"Mod.{col['letter']}", 0, 1, 'C')
         current_x += w_ferro_pdf + 0.2 
-
     pdf.draw_dimension_line_horz(20, 20 + (tot_len_cm * scale), start_y + 135, f"LARGHEZZA TOT: {tot_len_cm:.1f} cm")
 
     # PAG 4
@@ -226,22 +274,17 @@ def generate_pdf_report(project_name, parts_list, wood_data, iron_data, stats, c
     pdf.set_font("Arial", 'B', 11)
     pdf.cell(0, 8, "PIANTA (VISTA DALL'ALTO)", 0, 1, 'L', fill=True)
     pdf.ln(20)
-    
     scale_pianta = 0.65 
     start_x = 70 
     start_y = pdf.get_y() + 20 
     current_y = start_y
-    
     pdf.draw_dimension_line_vert(start_x - 15, start_y, start_y + (tot_len_cm * scale_pianta), f"TOT: {tot_len_cm:.1f}", 'R')
-    
     for col in cols_data:
         w_mod_scaled = (col['w'] + (SPESSORE_FERRO*2)) * scale_pianta 
         d_mod_scaled = col['d'] * scale_pianta 
-        
         pdf.set_fill_color(255, 255, 255)
         pdf.set_draw_color(0, 0, 0)
         pdf.rect(start_x, current_y, d_mod_scaled, w_mod_scaled)
-        
         pdf.set_xy(start_x, current_y - 5)
         pdf.set_font("Arial", '', 8)
         pdf.cell(d_mod_scaled, 5, f"P: {col['d']:.0f}", 0, 0, 'C')
@@ -258,15 +301,12 @@ def generate_pdf_report(project_name, parts_list, wood_data, iron_data, stats, c
         pdf.set_font("Arial", '', 10)
         pdf.cell(0, 8, f"Dimensioni: {col['w']} (L) x {col['h']} (H) x {col['d']} (P) cm  |  {col['r']} Mensole", 0, 1, 'L')
         pdf.ln(5)
-        
         h_front = col['h'] * scale_det
         base_y = (297 / 2) + (h_front / 2) + 20 
         center_x = 105 
-        
         w_front = col['w'] * scale_det
         x_front = center_x - w_front - 20 
         w_ferro_det = 0.5 
-        
         z_vals = [] 
         if col['mh']:
             for z in col['mh']:
@@ -274,22 +314,18 @@ def generate_pdf_report(project_name, parts_list, wood_data, iron_data, stats, c
                 mz = z * scale_det
                 pdf.set_fill_color(180,180,180)
                 pdf.rect(x_front + w_ferro_det, base_y - mz - (SPESSORE_LEGNO*scale_det), w_front, (SPESSORE_LEGNO*scale_det), 'F')
-        
         pdf.set_fill_color(0,0,0)
         pdf.rect(x_front, base_y - h_front, w_ferro_det, h_front, 'F')
         pdf.rect(x_front + w_front + w_ferro_det, base_y - h_front, w_ferro_det, h_front, 'F')
-        
         pdf.set_xy(x_front, base_y - h_front - 5)
         pdf.set_font("Arial", 'B', 8)
         pdf.cell(w_front + (w_ferro_det*2), 5, "VISTA FRONTALE", 0, 0, 'C')
         pdf.draw_dimension_line_horz(x_front, x_front + w_front + (w_ferro_det*2), base_y + 5, f"L: {col['w']:.0f}")
-
         line_x = center_x
         line_top = base_y - h_front
         line_bot = base_y
         pdf.line(line_x, line_top, line_x, line_bot)
         pdf.draw_dimension_line_vert(line_x, line_top, line_bot, f"H Tot: {col['h']:.1f}", 'R')
-        
         z_vals_sorted = sorted(z_vals)
         points = [0.0] + z_vals_sorted + [col['h']]
         for i in range(len(points)-1):
@@ -304,7 +340,6 @@ def generate_pdf_report(project_name, parts_list, wood_data, iron_data, stats, c
                 mid_y_quota = (y_curr + y_next) / 2
                 pdf.set_xy(line_x + 3, mid_y_quota - 2)
                 pdf.cell(10, 4, f"{dist:.1f}", 0, 0, 'L')
-
         x_side = center_x + 40
         w_side = col['d'] * scale_det
         h_side = col['h'] * scale_det
@@ -323,7 +358,7 @@ def generate_pdf_report(project_name, parts_list, wood_data, iron_data, stats, c
         pdf.cell(w_side, 5, "VISTA LATERALE", 0, 0, 'C')
         pdf.draw_dimension_line_horz(x_side, x_side + w_side, base_y + 5, f"P: {col['d']:.0f}")
 
-    # --- PAGINE ESECUTIVI TAGLIO ---
+    # --- PAG ESECUTIVI TAGLIO ---
     pdf.add_page()
     pdf.set_fill_color(240, 240, 240)
     pdf.set_font("Arial", 'B', 11)
@@ -429,6 +464,11 @@ def load_default_if_exists():
 def apply_json_data(data):
     st.session_state['project_name'] = data.get('project_name', 'Progetto')
     st.session_state['num_colonne'] = data.get('num_colonne', 2)
+    st.session_state['client_name'] = data.get('client_name', '')
+    st.session_state['client_address'] = data.get('client_address', '')
+    st.session_state['finish_wood'] = data.get('finish_wood', 'Rovere Naturale')
+    st.session_state['finish_iron'] = data.get('finish_iron', 'Nero Opaco')
+    
     for i, col in enumerate(data.get('cols', [])):
         st.session_state[f"w_{i}"] = col.get('w', 60)
         st.session_state[f"h_{i}"] = col.get('h', 200)
@@ -465,6 +505,20 @@ with st.sidebar:
     f = st.file_uploader("Carica JSON", type=["json"])
     if f: load_user_file(f)
     
+    st.divider()
+    st.markdown("#### Dati Cliente")
+    if 'client_name' not in st.session_state: st.session_state['client_name'] = ""
+    st.text_input("Ragione Sociale / Nome", key='client_name')
+    if 'client_address' not in st.session_state: st.session_state['client_address'] = ""
+    st.text_input("Indirizzo / Città", key='client_address')
+    
+    st.markdown("#### Finiture")
+    if 'finish_wood' not in st.session_state: st.session_state['finish_wood'] = "Rovere Naturale"
+    st.text_input("Finitura Legno", key='finish_wood')
+    if 'finish_iron' not in st.session_state: st.session_state['finish_iron'] = "Nero Opaco"
+    st.text_input("Finitura Ferro", key='finish_iron')
+    
+    st.divider()
     st.header("📐 Moduli")
     if 'num_colonne' not in st.session_state: st.session_state['num_colonne'] = 2
     num_colonne = st.number_input("Quantità Moduli", min_value=1, max_value=10, key="num_colonne")
@@ -525,7 +579,8 @@ with st.sidebar:
 
     # --- 3D PLOT ---
     fig = go.Figure()
-    camera = dict(eye=dict(x=0.0, y=2.5, z=0.1)) 
+    camera = dict(eye=dict(x=0.0, y=-2.5, z=0.1)) 
+    
     cx = 0 
     for dc in dati_colonne:
         lbl = f"Mod {dc['letter']}"
@@ -549,7 +604,16 @@ with st.sidebar:
     cols_to_save = []
     for dc in dati_colonne:
          cols_to_save.append({"w": dc['w'], "h": dc['h'], "d": dc['d'], "r": dc['r'], "manual": dc['man'], "man_heights": dc['mh']})
-    proj_data = {"project_name": prj, "num_colonne":st.session_state.num_colonne, "cols":cols_to_save}
+    
+    proj_data = {
+        "project_name": prj, 
+        "num_colonne":st.session_state.num_colonne, 
+        "cols":cols_to_save,
+        "client_name": st.session_state['client_name'],
+        "client_address": st.session_state['client_address'],
+        "finish_wood": st.session_state['finish_wood'],
+        "finish_iron": st.session_state['finish_iron']
+    }
 
     c1, c2 = st.columns(2)
     c1.download_button("💾 JSON", json.dumps(proj_data), fname_json, "application/json")
@@ -558,7 +622,7 @@ with st.sidebar:
     st.caption(VERSION)
 
 # --- 9. TABS MAIN ---
-tab1, tab2 = st.tabs(["🎥 3D Config", "🏭 ESECUTIVI PRODUZIONE"])
+tab1, tab2, tab3 = st.tabs(["🎥 3D Config", "🏭 ESECUTIVI PRODUZIONE", "💰 PREVENTIVATORE"])
 
 with tab1:
     fig.update_layout(
@@ -603,9 +667,10 @@ with tab2:
     c_info3.metric("Peso Legno", f"{stats['peso_legno']:.1f} kg")
     c_info4.metric("Viteria", f"{num_viti} pz")
     
+    colors_data = {"legno": st.session_state['finish_wood'], "ferro": st.session_state['finish_iron']}
     fname_pdf = f"{prj}_{ts}_SchedaTecnica.pdf"
     if st.button("📄 GENERA SCHEDA TECNICA PDF", type="primary", use_container_width=True):
-        pdf_bytes = generate_pdf_report(prj, parts_list, distinta_legno_pdf, distinta_ferro_pdf, stats, dati_colonne)
+        pdf_bytes = generate_pdf_report(prj, parts_list, distinta_legno_pdf, distinta_ferro_pdf, stats, dati_colonne, colors_data)
         st.download_button("📥 SCARICA PDF", pdf_bytes, fname_pdf, "application/pdf")
     
     st.divider()
@@ -639,13 +704,11 @@ with tab2:
         y_holes = [cursor_y_plot + hx for hx, hy in part['holes']] 
         fig_all.add_trace(go.Scatter(x=x_holes, y=y_holes, mode='markers', marker=dict(color='#00FFFF', size=6), hoverinfo='skip'))
         fig_all.add_annotation(x=dim_x/2, y=cursor_y_plot + dim_y/2, text=part['lbl'], showarrow=False, font=dict(size=14, color="white"))
-        
         unique_x = sorted(list(set(x_holes)))
         for i in range(len(unique_x) - 1):
             dist = unique_x[i+1] - unique_x[i]
             mid_x = (unique_x[i] + unique_x[i+1]) / 2
             fig_all.add_annotation(x=mid_x, y=cursor_y_plot - 5, text=f"| {dist:.1f} |", showarrow=False, font=dict(size=10, color="#AAAAAA"))
-
         cursor_y_plot += dim_y + gap_plot
 
     fig_all.update_layout(
@@ -664,3 +727,43 @@ with tab2:
             c_name.write(f"**{part['lbl']}** ({part['h']}x{part['w']} cm)")
             dxf_single = generate_single_dxf(part, prj)
             c_down.download_button("⬇️ DXF", dxf_single, f"{part['lbl']}.dxf", "application/dxf", key=f"dxf_{idx}")
+
+with tab3:
+    st.header("💰 Preventivatore (Tempi & Costi)")
+    st.info("Compila i parametri qui sotto. Puoi salvare questa configurazione per usarla come default futuro.")
+    
+    # INPUTS COSTI E TEMPI (Organizzati in Colonne ed Expander)
+    with st.expander("1. Costi Base e Materiali", expanded=True):
+        c1, c2, c3 = st.columns(3)
+        st.session_state.costs_config['costo_ferro_kg'] = c1.number_input("Costo Ferro (€/kg)", value=st.session_state.costs_config.get('costo_ferro_kg', 0.0))
+        st.session_state.costs_config['costo_legno_mq'] = c2.number_input("Costo Legno (€/mq)", value=st.session_state.costs_config.get('costo_legno_mq', 0.0))
+        st.session_state.costs_config['costo_ora_operaio'] = c3.number_input("Costo Operaio (€/h)", value=st.session_state.costs_config.get('costo_ora_operaio', 0.0))
+
+    with st.expander("2. Tempi Approvvigionamento (Giorni)", expanded=False):
+        c1, c2, c3 = st.columns(3)
+        st.session_state.costs_config['gg_ordine_ferro'] = c1.number_input("GG Ordine Ferro", value=st.session_state.costs_config.get('gg_ordine_ferro', 1))
+        st.session_state.costs_config['gg_arrivo_lastra'] = c2.number_input("GG Arrivo Lastra", value=st.session_state.costs_config.get('gg_arrivo_lastra', 5))
+        st.session_state.costs_config['gg_verniciatura_ferro'] = c3.number_input("GG Verniciatura", value=st.session_state.costs_config.get('gg_verniciatura_ferro', 5))
+
+    with st.expander("3. Tempi Lavorazione (Minuti)", expanded=False):
+        c1, c2 = st.columns(2)
+        st.session_state.costs_config['min_taglio_legno_pezzo'] = c1.number_input("Minuti Taglio (per pezzo)", value=st.session_state.costs_config.get('min_taglio_legno_pezzo', 0.0))
+        st.session_state.costs_config['min_colore_legno_metro'] = c2.number_input("Minuti Colore Legno (al metro)", value=st.session_state.costs_config.get('min_colore_legno_metro', 0.0))
+        
+        c3, c4 = st.columns(2)
+        st.session_state.costs_config['min_preassemblaggio_modulo'] = c3.number_input("Minuti Pre-assemblaggio (Modulo)", value=st.session_state.costs_config.get('min_preassemblaggio_modulo', 0.0))
+        st.session_state.costs_config['min_preassemblaggio_mensola'] = c4.number_input("Minuti Pre-assemblaggio (Mensola)", value=st.session_state.costs_config.get('min_preassemblaggio_mensola', 0.0))
+
+    with st.expander("4. Logistica e Consegna", expanded=False):
+        st.session_state.costs_config['ore_pulizia'] = st.number_input("Ore Pulizia Finale", value=st.session_state.costs_config.get('ore_pulizia', 2.0))
+        st.session_state.costs_config['ore_prep_spedizione'] = st.number_input("Ore Prep. Spedizione", value=st.session_state.costs_config.get('ore_prep_spedizione', 2.0))
+
+    st.write("---")
+    # Bottone per scaricare il JSON di configurazione
+    json_costs = json.dumps(st.session_state.costs_config, indent=4)
+    st.download_button(
+        label="💾 SCARICA CONFIGURAZIONE PREZZI (da usare come default)",
+        data=json_costs,
+        file_name="tempicosti_default.json",
+        mime="application/json"
+    )
